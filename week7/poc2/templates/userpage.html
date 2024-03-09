@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>
+        .box {
+      width: 30%; /* Adjust the width as needed for your layout */
+      display: inline-block;
+      height: 40%;
+      margin: 10px;
+      padding: 10px;
+      text-align: center;
+      border: 1px solid #ccc;
+    }
+    .box {
+      width: 30%; /* Adjust the width as needed for your layout */
+      display: inline-block;
+      height: 40%;
+      margin: 10px;
+      padding: 10px;
+      text-align: center;
+      border: 1px solid #ccc;
+    }
+
+   
+    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Management System</title>
+    {% with messages = get_flashed_messages() %}  
+         {% if messages %}  
+               {% for message in messages %}  
+                <script>
+                    alert("{{ message }}");
+                </script>
+               {% endfor %}  
+         {% endif %}  
+      {% endwith %} 
+    <nav>
+        <a href="{{ url_for('user_routes.userprofile',uname=uname)}}">userprofile</a>
+        <a href="{{ url_for('auth_routes.logout',uname=uname)}}">Logout</a>
+    </nav>
+     
+</head>
+<body>
+    <h1>Hello {{uname}}</h1>
+    <form method="post" action="{{url_for('books_routes.searchbook',uname=uname)}}">
+        <input type="text" name="bname" placeholder="Search">
+        <button type="submit">search</button>
+      </form>
+    
+    <main>
+        <div class="box2">
+            {% for b in books%}
+            <div class="box">
+                <h3>{{b['bname']}}</h3>
+            <a href="{{ url_for('books_routes.issuebook',bname=b['bname'],uname=uname)}}">Issue book</a>
+            </div>
+            {%endfor%}
+        </div>
+    </main>   
+</body>
+</html>

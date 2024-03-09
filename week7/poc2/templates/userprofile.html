@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Profile</title>
+    <style>
+        .readonly {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>User Profile</h1>
+    <form method="post" action="{{ url_for('user_routes.update_userdata',uname=uname)}}">
+        <label>Username:</label>
+        <input type="text" id="username" value="{{ info[0][1] }}" readonly class="readonly" name="uname"><br><br>
+
+        <label>Status:</label>
+        <input type="text" id="status" value="{{ info[0][2] }}" readonly class="readonly"><br><br>
+
+        <label>Issued Books:</label>
+        <input type="text" id="issuedBooks" value="{{ info[0][3] }}" readonly class="readonly"><br><br>
+
+        <label>Issued Books Name:</label>
+        <input type="text" id="bn" name="bn" value="{{ info[0][4] }}" readonly class="readonly"><br><br>
+
+        <label>Email:</label>
+        <input type="text" id="email" value="{{ info[0][5] }}" name="eid" readonly class="readonly"><button type="button" onclick="toggleReadOnly('email')">Edit</button><br><br>
+
+        <label>Contact Number:</label>
+        <input type="text" id="cno" name="cno" value="{{ info[0][6] }}"  readonly class="readonly"><button type="button" onclick="toggleReadOnly('cno')">Edit</button><br><br>
+
+        <label>Address:</label>
+        <textarea id="addr" name="addr" readonly class="readonly">{{ info[0][7] }}</textarea><button type="button" onclick="toggleReadOnly('addr')">Edit</button><br><br>
+
+        <button type="submit">Save changes</button>
+    </form>
+
+    <script>
+        function toggleReadOnly(elementId) {
+            var element = document.getElementById(elementId);
+            element.readOnly = !element.readOnly;
+            element.classList.toggle('readonly');
+        }
+    </script>
+</body>
+</html>

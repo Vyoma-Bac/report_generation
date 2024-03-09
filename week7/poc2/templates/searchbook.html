@@ -1,0 +1,60 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>
+        .box {
+      width: 30%; /* Adjust the width as needed for your layout */
+      display: inline-block;
+      height: 40%;
+      margin: 10px;
+      padding: 10px;
+      text-align: center;
+      border: 1px solid #ccc;
+    }
+    .box {
+      width: 30%; /* Adjust the width as needed for your layout */
+      display: inline-block;
+      height: 40%;
+      margin: 10px;
+      padding: 10px;
+      text-align: center;
+      border: 1px solid #ccc;
+    }
+
+   
+    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Management System</title>
+    {% with messages = get_flashed_messages() %}  
+         {% if messages %}  
+               {% for message in messages %}  
+                <script>
+                    alert("{{ message }}");
+                </script>
+               {% endfor %}  
+         {% endif %}  
+      {% endwith %} 
+   
+</head>
+<body>
+    <h1>Hello{{uname}}</h1>
+    <main>
+        <div class="box2">
+            {{bname}}
+            {% for b in res%}
+            <div class="box">
+                <h3>{{b}}</h3>
+                
+            <a href="{{ url_for('books_routes.issuebook',bname=b[1],uname=uname)}}">Issue book</a>
+            </div>
+            {%endfor%}
+        </div>
+    </main>   
+        
+    
+    
+
+</body>
+</html>

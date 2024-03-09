@@ -1,0 +1,199 @@
+Ensure that your script can handle variations in formatting and be robust enough to extract the relevant information accurately.
+Save the date: 02/14/2024. Call (555) 123-4567 for details. Email us at info@example.com. Visit our site: https://www.example.com.
+
+Join our webinar on 03/15/2024. Dial (987) 654-3210 or send questions to support@example.org. Website: http://www.example.org.
+
+Newsletter alert! Check your email for updates. Subscribe at https://www.example-newsletter.com for the latest news.
+
+Shop now and get 20% off until 11/15/2024. Visit https://www.example-store.com and use code SAVE20.
+
+Tech issues? Call (111) 222-3333 or contact tech-support@example-company.com. Available 24/7.
+
+Exciting conference on 10/25/2024. Register at (555) 999-8888 or conference-reg@example.org. Details: https://www.example-conference.com.
+
+Emergency hotline: (123) 456-7890. Email urgent@example-company.com for immediate assistance.
+
+Important update on 12/05/2024. Call (999) 000-1111 or check our site https://www.example-update.com for details.
+
+Feedback wanted! Fill out our survey at https://www.example-survey.com. Questions? Contact survey-team@example.com.
+
+For job opportunities, email hr@example-careers.com or call (777) 888-9999. Explore roles at http://www.example-careers.com.
+
+
+"https://www.example.com/search?q=python&category=programming&sort=popularity",
+"http://blog.example.org/articles?tag=technology&page=2",
+"https://api.example.net/data?format=json&apikey=abc123",
+"https://www.sample-site.com/products?id=123&category=electronics",
+"https://forum.example.org/topic?title=url+parsing&user=admin&sort=latest",
+"https://sub.example.com/path/to/page?param1=value1&param2=value2",
+"https://www.testing-site.org/search?query=test+case&filter=latest",
+"http://www.product-site.com/product-details?id=9876&lang=en",
+"https://app.example.io/dashboard?user=admin&theme=dark",
+"https://www.news-site.org/articles?category=world&tag=breaking-news&page=1",
+"https://forum.sample.org/post?id=456&user=member1&sortBy=votes",
+"https://www.travel-site.com/destination?city=paris&lang=fr&date=2024-03-01",
+"https://api.testing.net/data?format=xml&token=xyz987&user=admin",
+"https://www.weather-site.org/forecast?location=london&units=celsius",
+"https://www.blog-example.com/post?id=789&tag=python&author=john_doe"
+
+github project(invoice to data)
+
+Task: Regular Expression Challenge
+Your task is to create a Python script that uses regular expressions to identify and extract various types of information from a given text. The text may contain dates, phone numbers, email addresses, and URLs. Here's a set of requirements for your script:
+Dates:
+Identify and extract dates in the format "dd/mm/yyyy" or "mm/dd/yyyy".
+Example: "Today is 01/30/2024, and the event is on 02/15/2024."
+Phone Numbers:
+Identify and extract phone numbers in different formats, such as "xxx-xxx-xxxx" or "(xxx) xxx-xxxx".
+Example: "Contact us at (123) 456-7890 for more information."
+Email Addresses:
+Identify and extract email addresses.
+Example: "You can reach us at info@example.com."
+URLs:
+Identify and extract URLs in the format "http(s)://www.example.com".
+Example: "Visit our website at https://www.example.com for more details."
+
+Task 1: Parse a Query String
+Write a Python program that does the following:
+Take a query string as input. The query string will be in the format of a URL, for example: "https://www.example.com/search?q=python&category=programming&sort=popularity".
+Parse the query string to extract and print the following information:
+Protocol (e.g., "https")
+Domain (e.g., "www.example.com")
+Subdomain (if available)
+Path (e.g., "/search")
+Query parameters (e.g., "q=python&category=programming&sort=popularity")
+Task 2: Extract Specific Information
+Enhance your program to:
+Extract and print the value of the "q" parameter from the query string.
+Task 3: Modify Query String
+Modify your program to:
+Change the value of the "sort" parameter to "date".
+Print the modified query string.
+
+input: 'program'
+Output: rga
+
+s =  'coder'
+print(s[::0])
+Output:  ?
+
+s = 'doubled'
+print(s[1:6][1:3])
+Output:  ?
+
+
+input: 'question'
+Output: nisu
+
+Input: 'mirage'
+Output: 'rmg'
+
+s = 'program'
+print(s[::2])
+output: ?
+
+s = 'doubled'
+print(s[1:6][1:3])
+Output: ?
+
+error catch and exception
+log and errors exception
+go through types of exception
+create custom exception
+
+You are tasked with implementing a program for user account creation. The program should prompt the user to enter their details such as username, password, and age. Your goal is to validate the user input and handle potential errors to ensure a smooth account creation process.
+Requirements:
+Username Validation:
+Usernames must be alphanumeric and contain at least 6 characters.
+Ensure that the username is not already taken.
+Password Validation:
+Passwords must be at least 8 characters long.
+Include a mix of uppercase and lowercase letters, numbers, and special characters.
+Age Validation:
+Users must be at least 18 years old.
+Error Handling:
+Implement error handling for invalid input and provide meaningful error messages.
+Handle exceptions such as incorrect data types, unexpected input, etc.
+
+7-2-24
+method types response types Authentication methods
+open weather API
+
+API key:::
+65c34a26fdd3df2861753bd0.fd7c350a314765c8328f1140fe6b71cf50e5ea06b000c245dfd5c9492d2e5ff6
+
+
+create generic script which accept any type of requirements
+
+os.system('clear')
+used at invalid places 
+storing return val from method where method returned nothing
+
+{
+  "meta": {
+    "status": 200
+  },
+  "data": {
+    "id": "65c34ad5e723580cc0b0d414",
+    "profile_name": "govindgojiya-s8hb6c",
+    "full_name": "Govind Gojiya",
+    "profile_url": "https://www.openlearning.com/u/govindgojiya-s8hb6c",
+    "profile_image": "https://openlearning-cdn.s3.amazonaws.com/govindgojiya-s8hb6c-avatar-48-ts1707297495.2603607.jpg"
+  }
+}
+
+course id:
+575e121d117bd07ce206e7b1
+
+
+
+{
+  "meta": {
+    "status": 200
+  },
+  "data": {
+    "id": "65c34a26fdd3df2861753bd0",
+    "profile_name": "vyomasuthar-s8hb1i",
+    "full_name": "Vyoma Suthar",
+    "profile_url": "https://www.openlearning.com/u/vyomasuthar-s8hb1i",
+    "profile_image": "https://openlearning-cdn.s3.amazonaws.com/vyomasuthar-s8hb1i-avatar-48-ts1707297321.2974064.jpg"
+  }
+}
+
+users:::::
+https://api.openlearning.com/v2.1/users/?profile_name=vyomasuthar-s8hb1i&api_key=65c34a26fdd3df2861753bd0.fd7c350a314765c8328f1140fe6b71cf50e5ea06b000c245dfd5c9492d2e5ff6
+
+uid:::::::
+https://api.openlearning.com/v2.1/users/65c34a26fdd3df2861753bd0/?api_key=65c34a26fdd3df2861753bd0.
+
+
+
+what is Docker?
+docker vs virtual machine
+Try completeing pre requisites
+Dask for multi threading
+install ubantu wsl terminal for docker
+need of pipeline airflow apimake python code airflow friendly
+--------------------------------------------------
+options diff bet http1 and http2 
+mdn web docs
+hyperwiser types of hyperwiser
+
+if len(ls) == 0:
+if len(ls) != 0:
+
+return lines_list
+
+ id_file = open(file_name, 'a')
+ id_file = open(file_name, 'r')\
+
+
+  os.system('clear')
+    print()
+  
+def clear_screen():
+    # function to clear the output of the screen
+    if os.name == 'posix':  # Unix-like systems
+        os.system('clear')
+    elif os.name == 'nt':   # Windows
+        os.system('cls')  

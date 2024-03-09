@@ -1,0 +1,13 @@
+
+  {% from "_formhelpers.html" import render_field %}
+<form method="post">
+    <dl>
+      {{ render_field(form.uname) }}<br>
+      {{ render_field(form.pwd) }}<br>
+    </dl>
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% endif %}
+    <p><input type="submit" value="Register"></p>
+    <a href="{{ url_for('auth_routes.register')}}">sign up</a>
+  </form>
