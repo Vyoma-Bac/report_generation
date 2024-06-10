@@ -9,7 +9,6 @@ def download_report():
     userId = request.args.get('userId')
     startDate = request.args.get('startDate')
     endDate = request.args.get('endDate')
-    print("yesss")
     pdf_buffer = utils.generate_pdf(userId, startDate, endDate)
     response = make_response(pdf_buffer)
     response.headers['Content-Type'] = 'application/pdf'
