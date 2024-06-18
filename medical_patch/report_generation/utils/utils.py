@@ -1,87 +1,116 @@
 import numpy as np
 from scipy import signal
 import neurokit2 as nk
-import json
 import biosppy.signals.ecg as ecg
 import matplotlib.pyplot as plt
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.units import inch
 from io import BytesIO
 from datetime import datetime, timedelta
-import warnings
-import pandas as pd
-import pytz
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import ParagraphStyle
-from matplotlib.ticker import MultipleLocator
-import math
-from flask import Flask, send_file, make_response, request
 from io import BytesIO
-from pyngrok import ngrok
 import os
+import requests
+import time
+import csv
+import time
+from functools import wraps
+import asyncio
+import aiohttp
+from aiohttp import ClientSession
+from flask import Flask, make_response, request, jsonify
+# import nest_asyncio
 
+# nest_asyncio.apply() 
+def timer_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        t1 = time.perf_counter(), time.process_time()
+        result = func(*args, **kwargs)
+        t2 = time.perf_counter(), time.process_time()
+        
+        real_time = t2[0] - t1[0]
+        cpu_time = t2[1] - t1[1]
+        
+        # Open the CSV file and write the data
+        with open('function_times.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+            # Check if the file is empty to write the header
+            if file.tell() == 0:
+                writer.writerow(['Function Name', 'Real Time', 'CPU Time'])
+            writer.writerow([func.__name__, f"{real_time:.2f}", f"{cpu_time:.2f}"])
+        
+        return result
+    return wrapper
+# def timer_decorator(func):
+#     def wrapper(*args, **kwargs):
+#         t1 = time.perf_counter(), time.process_time()
+#         result = func(*args, **kwargs)
+#         t2 = time.perf_counter(), time.process_time()
+#         print(f"{func.__name__}()")
+#         print(f" Real time: {t2[0] - t1[0]:.2f} seconds")
+#         print(f" CPU time: {t2[1] - t1[1]:.2f} seconds")
+#         print()
+#         return result
+#     return wrapper
+# def timer_decorator(func):
+#     def wrapper(*args, **kwargs):
+#         start_time = time.time()
+#         result = func(*args, **kwargs)
+#         end_time = time.time()
+#         execution_time = end_time - start_time
+#         if execution_time > 0.0:
+#             print(f"Execution time of {func.__name__}: {execution_time} seconds")
+#         return result
+#     return wrapper
+
+@timer_decorator
 def detect_trigeminy(rr_intervals):
     # Check for trigeminy pattern based on RR intervals
     temp_count = 0
-    for i in range(1, len(rr_intervals)-1,3):
-       if 0.75 * rr_intervals[i-1] >  rr_intervals[i] and 0.60 * rr_intervals[i+1] >  rr_intervals[i]:  #change threshold val accordingly
+    length = len(rr_intervals)
+    for i in range(1, length - 1, 3):
+       #if 0.75 * rr_intervals[i-1] >  rr_intervals[i] and 0.60 * rr_intervals[i+1] >  rr_intervals[i]:  #change threshold val accordingly
+        if rr_intervals[i] < 0.75 * rr_intervals[i - 1] and rr_intervals[i] < 0.60 * rr_intervals[i + 1]:
             temp_count += 1
             if temp_count > 1:
                 return True
     return False
+
+@timer_decorator    
+def detect_bigeminy(rr_intervals):  
+    # Check for bigeminy pattern based on RR intervals
+    # if len(rr_intervals) % 2 == 0 and all(rr_intervals[i] < 0.75 * np.mean(rr_intervals) for i in range(1, len(rr_intervals), 2)):   # changed it from 0.75 to 0.65
+    #     return True
+    # return False
+    length = len(rr_intervals)
+    if length % 2 != 0:
+        return False
+    mean_rr = np.mean(rr_intervals)
+    threshold = 0.65 * mean_rr
+    for i in range(1, length, 2):
+        if rr_intervals[i] >= threshold:
+            return False
     
-def detect_bigeminy(rr_intervals):
-    if len(rr_intervals) % 2 == 0 and all(rr_intervals[i] < 0.75 * np.mean(rr_intervals) for i in range(1, len(rr_intervals), 2)):   # changed it from 0.75 to 0.65
-        return True
-    return False
+    return True
 
-def detect_sawtooth_waveform(waveform, sharpness_threshold=0.5):
-    # Calculate amplitude trend
-    amplitude_trend = calculate_amplitude_trend(waveform)
-
-    # Calculate sharp transitions
-    sharp_transitions = calculate_sharp_transitions(waveform)
-
-    # Classify waveform based on extracted features
-    if amplitude_trend == 'increasing' and sharp_transitions > sharpness_threshold:
-        return True  # Sawtooth pattern detected
-    else:
-        return False  # Not a sawtooth pattern
-
-def calculate_amplitude_trend(waveform):
-    # Calculate the trend of amplitude (e.g., linear regression)
-    # Here, we'll simply check if the amplitudes are increasing, decreasing, or neither
-    first_amplitude = waveform[0]
-    last_amplitude = waveform[-1]
-
-    if first_amplitude < last_amplitude:
-        return 'increasing'
-    elif first_amplitude > last_amplitude:
-        return 'decreasing'
-    else:
-        return 'unknown'
-
-def calculate_sharp_transitions(waveform):
-    # Measure sharp transitions between peaks and troughs
-    # Here, we'll calculate the average absolute difference between consecutive points
-    sharpness = sum(abs(waveform[i] - waveform[i+1]) for i in range(len(waveform) - 1)) / len(waveform)
-    return sharpness
-
+@timer_decorator
 def detect_atrial_flutter(pPinterval):
     temp_count = 0
+    mean_pP = np.mean(pPinterval)
     for p_p_interval in pPinterval:
-        if abs(p_p_interval - np.mean(pPinterval)) / np.mean(pPinterval) > 0.15:
-            temp_count +=1
+        # Calculate the absolute deviation from the mean and check if it exceeds 15%
+        if abs(p_p_interval - mean_pP) / mean_pP > 0.15:
+            temp_count += 1
             if temp_count > 2:
                 return True
     return False
+@timer_decorator
 def detect_atrioventricular_block(pr_intervals):    # Second degree and Third degree is left
     temp_count = 0
     for pr_interval in pr_intervals:
@@ -90,143 +119,270 @@ def detect_atrioventricular_block(pr_intervals):    # Second degree and Third de
             if temp_count > 2:
                 return True
     return False
-def detect_sawtooth_pattern(rr_intervals):
-    # Identify the peaks in RR intervals
-    peak_indices = detect_peaks(rr_intervals)
 
-    # Check if there's a consistent sawtooth pattern
-    for i in range(1, len(peak_indices)):
-        if peak_indices[i] - peak_indices[i-1] != 1:
-            return False
-    return True
-
-def detect_peaks(signal):
-    # Simple peak detection algorithm
-    peaks = []
-    for i in range(1, len(signal)-1):
-        if signal[i] > signal[i-1] and signal[i] > signal[i+1]:
-            peaks.append(i)
-    return peaks
-
+@timer_decorator
 def calculate_intervals(r_peaks,p_peaks,q_peaks,s_peaks,t_peaks):
+    # Calculates all the intervals
+    rRinterval=[]
+    rRsquare=[]
+    qSinterval=[]
+    rTinterval=[]
+    pQinterval=[]
+    rSinterval=[]
+    sTinterval=[]
+    qRinterval=[]
+    qTinterval=[]
+    pRinterval=[]
+    QRSinterval=[]
+    pPinterval=[]
 
-  rRinterval=[]
-  rRsquare=[]
-  qSinterval=[]
-  rTinterval=[]
-  pQinterval=[]
-  rSinterval=[]
-  sTinterval=[]
-  qRinterval=[]
-  qTinterval=[]
-  pRinterval=[]
-  QRSinterval=[]
-  pPinterval=[]
+    for i in range(1,len(r_peaks)):
+        rRinterval.append((r_peaks[i]-r_peaks[i-1])/200)
 
-  for i in range(1,len(r_peaks)):
-    rRinterval.append((r_peaks[i]-r_peaks[i-1])/200)
+    for i in range(1,len(p_peaks)):
+        pPinterval.append((p_peaks[i]-p_peaks[i-1])/200)
 
-  for i in range(1,len(p_peaks)):
-    pPinterval.append((p_peaks[i]-p_peaks[i-1])/200)
+    for i in range(1,len(rRinterval)):
+        rRsquare.append(np.square((rRinterval[i])-(rRinterval[i-1])))
 
-  for i in range(1,len(rRinterval)):
-    rRsquare.append(np.square((rRinterval[i])-(rRinterval[i-1])))
+    for i in range(min(len(s_peaks),len(q_peaks))):
+        if (s_peaks[i]!=0 and q_peaks[i]!=0):
+            qSinterval.append((s_peaks[i]-q_peaks[i])/200)
 
-  for i in range(min(len(s_peaks),len(q_peaks))):
-    if (s_peaks[i]!=0 and q_peaks[i]!=0):
-      qSinterval.append((s_peaks[i]-q_peaks[i])/200)
+    for i in range(min(len(t_peaks),len(r_peaks))):
+        if (t_peaks[i]!=0 and r_peaks[i]!=0):
+            rTinterval.append((t_peaks[i]-r_peaks[i])/200)
 
-  for i in range(min(len(t_peaks),len(r_peaks))):
-    if (t_peaks[i]!=0 and r_peaks[i]!=0):
-      rTinterval.append((t_peaks[i]-r_peaks[i])/200)
+    for i in range(min(len(p_peaks),len(q_peaks))):
+        if (p_peaks[i]!=0 and q_peaks[i]!=0):
+            pQinterval.append((q_peaks[i]-p_peaks[i])/200)
 
-  for i in range(min(len(p_peaks),len(q_peaks))):
-    if (p_peaks[i]!=0 and q_peaks[i]!=0):
-      pQinterval.append((q_peaks[i]-p_peaks[i])/200)
+    for i in range(min(len(s_peaks),len(r_peaks))):
+        if (s_peaks[i]!=0 and r_peaks[i]!=0):
+            rSinterval.append((s_peaks[i]-r_peaks[i])/200)
 
-  for i in range(min(len(s_peaks),len(r_peaks))):
-    if (s_peaks[i]!=0 and r_peaks[i]!=0):
-      rSinterval.append((s_peaks[i]-r_peaks[i])/200)
+    for i in range(min(len(s_peaks),len(t_peaks))):
+        if (s_peaks[i]!=0 and t_peaks[i]!=0):
+            sTinterval.append((t_peaks[i]-s_peaks[i])/200)
 
-  for i in range(min(len(s_peaks),len(t_peaks))):
-    if (s_peaks[i]!=0 and t_peaks[i]!=0):
-      sTinterval.append((t_peaks[i]-s_peaks[i])/200)
+    for i in range(min(len(r_peaks),len(q_peaks))):
+        if (r_peaks[i]!=0 and q_peaks[i]!=0):
+            qRinterval.append((r_peaks[i]-q_peaks[i])/200)
 
-  for i in range(min(len(r_peaks),len(q_peaks))):
-    if (r_peaks[i]!=0 and q_peaks[i]!=0):
-      qRinterval.append((r_peaks[i]-q_peaks[i])/200)
+    for i in range(min(len(q_peaks),len(t_peaks))):
+        if (t_peaks[i]!=0 and q_peaks[i]!=0):
+            qTinterval.append((t_peaks[i]-q_peaks[i])/200)
 
-  for i in range(min(len(q_peaks),len(t_peaks))):
-    if (t_peaks[i]!=0 and q_peaks[i]!=0):
-      qTinterval.append((t_peaks[i]-q_peaks[i])/200)
+    for i in range(min(len(p_peaks),len(r_peaks))):
+        if (p_peaks[i]!=0 and r_peaks[i]!=0):
+            pRinterval.append((r_peaks[i]-p_peaks[i])/200)
 
+    for i in range(min(len(qRinterval),len(rSinterval))):
+        QRSinterval.append(qRinterval[i]+rSinterval[i])
 
-  for i in range(min(len(p_peaks),len(r_peaks))):
-    if (p_peaks[i]!=0 and r_peaks[i]!=0):
-      pRinterval.append((r_peaks[i]-p_peaks[i])/200)
-
-  for i in range(min(len(qRinterval),len(rSinterval))):
-    QRSinterval.append(qRinterval[i]+rSinterval[i])
-
-
-  return rRinterval,pPinterval,rRsquare,qSinterval,rTinterval,pQinterval,rSinterval,sTinterval,qRinterval,qTinterval,pRinterval,QRSinterval
-
+    return rRinterval,pPinterval,rRsquare,qSinterval,rTinterval,pQinterval,rSinterval,sTinterval,qRinterval,qTinterval,pRinterval,QRSinterval
+@timer_decorator
 def find_peaks(ecg_signal_normalized,out,sample_rate):
+    # Algo to find peaks in waves
+    r_peaks = out
+    _ ,waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
+    p_peaks = waves_peak['ECG_P_Peaks']
+    q_peaks = waves_peak['ECG_Q_Peaks']
+    s_peaks = waves_peak['ECG_S_Peaks']
+    t_peaks = waves_peak['ECG_T_Peaks']
 
-  r_peaks = out['rpeaks']
-  # plot = nk.events_plot(r_peaks, ecg_signal_normalized)
-  _ ,waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
-  p_peaks = waves_peak['ECG_P_Peaks']
-  q_peaks = waves_peak['ECG_Q_Peaks']
-  s_peaks = waves_peak['ECG_S_Peaks']
-  t_peaks = waves_peak['ECG_T_Peaks']
+    # filtering peaks
+    p_peaks.pop()
+    q_peaks.pop()
+    s_peaks.pop()
+    t_peaks.pop()
+    p_peaks = [0 if np.isnan(x) else x for x in p_peaks]
+    q_peaks = [0 if np.isnan(x) else x for x in q_peaks]
+    s_peaks = [0 if np.isnan(x) else x for x in s_peaks]
+    t_peaks = [0 if np.isnan(x) else x for x in t_peaks]
 
-  # filtering peaks
-  p_peaks.pop()
-  q_peaks.pop()
-  s_peaks.pop()
-  t_peaks.pop()
-  p_peaks = [0 if np.isnan(x) else x for x in p_peaks]
-  q_peaks = [0 if np.isnan(x) else x for x in q_peaks]
-  s_peaks = [0 if np.isnan(x) else x for x in s_peaks]
-  t_peaks = [0 if np.isnan(x) else x for x in t_peaks]
+    return r_peaks,p_peaks,q_peaks,s_peaks,t_peaks
+# filter_coeffs_cache = {}
+# @timer_decorator
+# def get_filter_coeffs(sample_rate, filter_type='high'):
+#     global filter_coeffs_cache
+#     # Check if coefficients for the given sample_rate and filter_type are already computed
+#     if (sample_rate, filter_type) in filter_coeffs_cache:
+#         return filter_coeffs_cache[(sample_rate, filter_type)]
+    
+#     if filter_type == 'high':
+#         cutoff_freq = 0.5  # Cutoff frequency in Hz
+#         b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
+#     elif filter_type == 'band':
+#         low_cutoff = 0.5  # Lower cutoff frequency in Hz
+#         high_cutoff = 50  # Higher cutoff frequency in Hz
+#         b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
+    
+#     # Cache the coefficients
+#     filter_coeffs_cache[(sample_rate, filter_type)] = (b, a)
+#     return b, a
+# @timer_decorator
+# def precompute_filters(sample_rate):
+#     cutoff_freq = 0.5  # Cutoff frequency in Hz for baseline wander removal
+#     low_cutoff = 0.5  # Lower cutoff frequency in Hz for bandpass filter
+#     high_cutoff = 50  # Higher cutoff frequency in Hz for bandpass filter
+    
+#     # High-pass filter for baseline wander removal
+#     b_high, a_high = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
+    
+#     # Band-pass filter to remove noise
+#     b_band, a_band = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
+    
+#     return (b_high, a_high), (b_band, a_band)
 
-  return r_peaks,p_peaks,q_peaks,s_peaks,t_peaks
+# # Filters initialization (assuming sample_rate is known and constant)
+# (b_high, a_high), (b_band, a_band) = precompute_filters(200)
 
-def process_ecg(ecg_signal, sample_rate):
-    # Remove baseline wander using a high-pass filter
-    cutoff_freq = 0.5  # Cutoff frequency in Hz
-    b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
-    ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
-    # Apply bandpass filter to remove noise
-    low_cutoff = 0.5  # Lower cutoff frequency in Hz
-    high_cutoff = 50  # Higher cutoff frequency in Hz
-    b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
-    ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
-    # Normalize the ECG signal
-    ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
-    # Initialize 'out' variable
-    out = None
-    # Process the ECG signal to detect R peaks
-    try:
-        out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
-        r_peaks = out['rpeaks']
-        if len(r_peaks) < 2:
-            raise ValueError("Not enough beats to compute heart rate.")
-    except Exception as e:
-        print("Error:", e)
-        r_peaks = []  # Return empty list if an error occurs
+# @timer_decorator
+# def process_ecg(ecg_signal, sample_rate):
+#     # Remove baseline wander using a high-pass filter
+#     ecg_signal_filt = signal.filtfilt(b_high, a_high, ecg_signal)
+    
+#     # Apply bandpass filter to remove noise
+#     ecg_signal_filt = signal.filtfilt(b_band, a_band, ecg_signal_filt)
+    
+#     # Normalize the ECG signal
+#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
+    
+#     # Initialize 'out' variable
+#     out = None
+    
+#     # Process the ECG signal to detect R peaks
+#     try:
+#         out = nk.ecg_process(ecg_signal_normalized, sampling_rate=sample_rate)
+#         r_peaks = out['ECG']['R_Peaks']
+        
+#         if len(r_peaks) < 2:
+#             raise ValueError("Not enough beats to compute heart rate.")
+#     except Exception as e:
+#         print("Error:", e)
+#         r_peaks = []  # Return empty list if an error occurs
 
-    return ecg_signal_normalized, out
+#     return ecg_signal_normalized, out
 
+# def process_ecg(ecg_signal, sample_rate):
+#     # Use cached filter coefficients
+#     b, a = get_filter_coeffs(sample_rate, 'high')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
+    
+#     b, a = get_filter_coeffs(sample_rate, 'band')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
+    
+#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
+    
+#     out = None
+#     try:
+#         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
+#         r_peaks = out['rpeaks']
+#         if len(r_peaks) < 2:
+#             raise ValueError("Not enough beats to compute heart rate.")
+#     except Exception as e:
+#         print("Error:", e)
+#         r_peaks = []  # Return empty list if an error occurs
 
+#     return ecg_signal_normalized, out
+# @timer_decorator
+# async def fetch_data(session, api_endpoint, userId, startTime, endTime):
+#     params = {
+#         'userId': userId,
+#         'startDate': startTime,
+#         'endDate': endTime
+#     }
+#     try:
+#         async with session.get(api_endpoint, params=params) as response:
+#             response.raise_for_status()  # Raise HTTPError for bad responses
+#             return await response.json()
+#     except aiohttp.ClientError as e:
+#         print(f"Error fetching data from the API: {e}")
+#         return None
+# @timer_decorator
+# async def fetch_ecg_data_parallel(userId, startTime, endTime):
+#     api_endpoint = "https://api.accu.live/api/v1/devices/getecgdata"
+#     tasks = []
+#     startTime = int(startTime)
+#     endTime = int(endTime)
+#     async with ClientSession() as session:
+#         # Divide the time range into 2-hour chunks
+#         current_time = startTime
+#         while current_time < endTime:
+#             next_time = min(current_time + 7200, endTime)  # End of current 2-hour chunk
+#             tasks.append(fetch_data(session, api_endpoint, userId, current_time, next_time))
+#             current_time = next_time
+        
+#         # Fetch all data concurrently
+#         results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+#         # Process each chunk of ECG data
+#         ecg_vals = []
+#         for result in results:
+#             if result and result.get('data') and result['data']:  # Check if 'data' exists and is not empty
+#                 for data_chunk in result['data']:
+#                     ecg_signal = data_chunk.get('ecg_vals', [])  # Get 'ecg_vals' from data chunk
+#                     sample_rate = 200  # Example: replace with actual sampling rate
+                    
+#                     # Process ECG signal using process_ecg function
+#                     ecg_signal_processed, out = process_ecg(ecg_signal, sample_rate)
+                    
+#                     # Convert processed ECG signal to list
+#                     ecg_signal_processed_list = ecg_signal_processed.tolist()
+                    
+#                     # Ensure 'out' is JSON-serializable
+                    
+#                     # Prepare processed data structure with 'date_time' and processed 'ecg_vals'
+#                     processed_data = {
+#                         "date_time": data_chunk['date_time'],
+#                         "ecg_vals": ecg_signal_processed_list,
+#                         "out": out
+#                     }
+                    
+#                     # Append processed_data to ecg_vals
+#                     ecg_vals.append(processed_data)
+        
+# #         return ecg_vals
+# @timer_decorator
+# def process_ecg(ecg_signal, sample_rate):
+#     # Remove baseline wander using a high-pass filter
+#     cutoff_freq = 0.5  # Cutoff frequency in Hz
+#     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
+    
+#     # Apply bandpass filter to remove noise
+#     low_cutoff = 0.5  # Lower cutoff frequency in Hz
+#     high_cutoff = 50  # Higher cutoff frequency in Hz
+#     b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
+    
+#     # Normalize the ECG signal
+#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
+    
+#     # Initialize 'out' variable
+#     out = None
+    
+#     # Process the ECG signal to detect R peaks
+#     try:
+#         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
+#         r_peaks = out['rpeaks']
+#         if len(r_peaks) < 2:
+#             raise ValueError("Not enough beats to compute heart rate.")
+#     except Exception as e:
+#         print("Error:", e)
+#         r_peaks = []  # Return empty list if an error occurs
+    
+#     return ecg_signal_normalized, out
+
+@timer_decorator
 def detect_afib(rr_intervals, p_peaks, p_peak_threshold=6):
     mean_rr_interval = np.mean(rr_intervals)
     rr_regular = all(np.abs(rr_interval - mean_rr_interval) < 0.1 * mean_rr_interval for rr_interval in rr_intervals)
     if p_peaks.count(0) >= p_peak_threshold and rr_regular == False:
         return True
     else : return False
-
+@timer_decorator
 def detect_vt(qrs_mean, st_mean, heart_rate, p_peaks):
     qrs_mean_threshold = 0.12
     st_segment_threshold = 0.12
@@ -237,7 +393,7 @@ def detect_vt(qrs_mean, st_mean, heart_rate, p_peaks):
                 if heart_rate > rapid_heart_rate_threshold:
                     return True
     return False
-
+@timer_decorator
 def detect_svt(qrs_mean, heart_rate, p_peaks):
     qrs_mean_threshold = 0.12
     rapid_heart_rate_threshold = 100
@@ -246,33 +402,28 @@ def detect_svt(qrs_mean, heart_rate, p_peaks):
             if heart_rate > rapid_heart_rate_threshold:
                 return True
     return False
-
+@timer_decorator
 def filter_ecg_data_around_timestamp(timestamp, json_data, window_size=1):
     ecg_data_filtered = []
-    timestamps = [datetime.fromisoformat(data_point["date_time"][:-1]) for data_point in json_data["data"]]
+    timestamps = [data_point["date_time"] for data_point in json_data]
     index = timestamps.index(timestamp)
     start_index = max(0, index - window_size)
-    end_index = min(len(json_data["data"]), index + window_size + 1)
+    end_index = min(len(json_data), index + window_size + 1)
 
     # If there is no data before the timestamp, include the first packet along with two subsequent packets
     if index < window_size:
         start_index = 0
-        end_index = min(2 * window_size + 1, len(json_data["data"]))
+        end_index = min(2 * window_size + 1, len(json_data))
     # If there is no data after the timestamp, include the two packets before it
-    elif index > len(json_data["data"]) - window_size - 1:
-        start_index = max(0, len(json_data["data"]) - 2 * window_size - 1)
-        end_index = len(json_data["data"])
+    elif index > len(json_data) - window_size - 1:
+        start_index = max(0, len(json_data) - 2 * window_size - 1)
+        end_index = len(json_data)
 
-    for data_point in json_data["data"][start_index:end_index]:
+    for data_point in json_data[start_index:end_index]:
         ecg_data_filtered.append({"timestamp": datetime.fromisoformat(data_point["date_time"][:-1]),
                                   "ecg_vals": data_point["ecg_vals"]})
     return ecg_data_filtered
-
-# !pip install reportlab==3.5.67
-# !pip install Pillow
-
-import requests
-
+@timer_decorator
 def fetch_user_data(user_id):
     # Define the API endpoint
     api_endpoint = f"https://api.accu.live/api/v1/users/{user_id}"
@@ -308,39 +459,30 @@ def fetch_user_data(user_id):
         print("Error fetching data from the API:", e)
         return None
 
-
-def fetch_ecg_data(userId, startDate, endDate):
-    # Define the API endpoint
-    #api_endpoint = f"https://api.accu.live/api/v1/devices/getecgdata?userId=66277eaf7dcc5669805e807e&startDate=1713868200000&endDate=1713871800000"
-    api_endpoint = f"https://api.accu.live/api/v1/devices/getecgdata?userId={userId}&startDate={startDate}&endDate={endDate}"
-    #api_endpoint = "https://api.accu.live/api/v1/devices/getecgdata?userId=662791587dcc5669805e9193&startDate=1713871800000&endDate=1713875400000"
-    #api_endpoint = "https://api.accu.live/api/v1/devices/getecgdata?userId=662791587dcc5669805e9193&startDate=1713871800000&endDate=1713872400000"
-    #api_endpoint = f"https://api.accu.live/api/v1/devices/getecgdata?userId=66277eaf7dcc5669805e807e&startDate=1713865020000&endDate=1713865080000"
-    #api_endpoint = f"https://api.accu.live/api/v1/devices/getecgdata?userId=66277eaf7dcc5669805e807e&startDate=1713864900000&endDate=1713868200000"
-
-
-    try:
-        # Make a GET request to the API
-        response = requests.get(api_endpoint)
-
-        # Check if the request was successful (status code 200)
-        if response.status_code == 200:
-            # Return the JSON response
-            return response.json()
-        else:
-            # If the request was not successful, raise an exception
-            response.raise_for_status()
-    except requests.RequestException as e:
-        # Handle any request exceptions (e.g., connection errors, timeout)
-        print("Error fetching data from the API:", e)
-        return None
-
+# @timer_decorator
+# def fetch_ecg_data(userId, startDate, endDate):
+#     # Define the API endpoint
+#     api_endpoint = f"https://api.accu.live/api/v1/devices/getecgdata?userId={userId}&startDate={startDate}&endDate={endDate}"
+    
+#     try:
+#         # Make a GET request to the API
+#         response = requests.get(api_endpoint)
+#         # Check if the request was successful (status code 200)
+#         if response.status_code == 200:
+#             # Return the JSON response
+#             return response.json()
+#         else:
+#             # If the request was not successful, raise an exception
+#             response.raise_for_status()
+#     except requests.RequestException as e:
+#         # Handle any request exceptions (e.g., connection errors, timeout)
+#         print("Error fetching data from the API:", e)
+#         return None
+@timer_decorator
 def generate_image_around(ecg_data_hr,hr_datetime):
     plt.figure(figsize=(10, 1))
     # Concatenate all ecg_vals packets into a single list
-    concatenated_ecg_values = []
-    for data_point in ecg_data_hr:
-        concatenated_ecg_values.extend(data_point["ecg_vals"])
+    concatenated_ecg_values = [value for data_point in ecg_data_hr for value in data_point["ecg_vals"]]
     # Plot all ecg_vals as a continuous line
     plt.plot(concatenated_ecg_values, color='black', linewidth=1)
     # Highlight the portion corresponding to the maximum heart rate packet
@@ -358,61 +500,49 @@ def generate_image_around(ecg_data_hr,hr_datetime):
     plt.legend().remove()
     plt.margins(x=0)
     return plt
-
+@timer_decorator
 def generate_ecg_image(data):
-# Extract data from data dictionary
-    bg = os.path.join('static', 'bg_plot.png')
-    timestamp = data["timestamp"]
+    # Extract data from data dictionary
+    bg = os.path.join('static/images', 'bg_plot.png')
     r_peaks = data["r_peaks"]
     rRinterval = data["rRinterval"]
     ecg_signal_normalized = data["ecg_signal_normalized"]
-    #bg = "bg_plot.png"  # Update with the path to your PNG logo file
     plt.figure(figsize=(20, 2))
     image = plt.imread(bg)
     plt.imshow(image, aspect='auto', extent=[0, len(ecg_signal_normalized) + 1, np.min(ecg_signal_normalized) - 1, np.max(ecg_signal_normalized) + 1])
     plt.plot(ecg_signal_normalized, color='black', label='ECG Signal',linewidth=1)
-
+    length = len(r_peaks)
     # Add "N" labels on top of each peak with rR interval values
-    for i in range(len(r_peaks)):
-        peak_index = r_peaks[i]
-        peak_value = ecg_signal_normalized[peak_index]
+    for i, peak_index in enumerate(r_peaks):
         rR_value = rRinterval[i % len(rRinterval)]  # Get corresponding rR interval value
-
+        
         # Calculate the x-coordinate for positioning the rR interval value between two consecutive peaks
-        if i < len(r_peaks) - 1:
+        if i < length - 1:
             next_peak_index = r_peaks[i + 1]
             midpoint = (peak_index + next_peak_index) / 2
         else:
             midpoint = peak_index
-
+        
         # Add "N" label above the peak
         plt.text(peak_index, np.max(ecg_signal_normalized) + 0.8, 'N', fontsize=12, ha='center', va='top', color='black')
-
+        
         # Add rR interval value between two consecutive "N" labels and center it
-        if i < len(r_peaks) - 1:
-            next_midpoint = (next_peak_index + r_peaks[i + 2]) / 2 if i < len(r_peaks) - 2 else next_peak_index
+        if i < length - 1:
             plt.text(midpoint, np.max(ecg_signal_normalized) + 0.8, f'{int(rR_value * 1000)}', fontsize=12, ha='center', va='top', color='black')
+    
+    # Configure plot settings
     plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
     plt.tight_layout()
     plt.legend().remove()
     plt.margins(x=0)
-    # Return the bytes image object
+    
+    # Return the plot object
     return plt
-
-# !pip install pytz
-
+@timer_decorator
 def get_max_interval(pauses_data):
-    max_rr_data = {
-            "timestamp":pauses_data[0]["timestamp"],
-            "heartbeats": pauses_data[0]["heartbeats"],
-            "r_peaks": pauses_data[0]["r_peaks"],
-            "rRinterval": pauses_data[0]["rRinterval"],
-            "ecg_signal_normalized": pauses_data[0]["ecg_signal_normalized"],
-            "duration" : pauses_data[0]["duration"]
-        }
-    max_rr = max(pauses_data[0]["rRinterval"])
+    max_rr_data = None
+    max_rr = -float('inf')
     for data in pauses_data:
-
       temp = max(data["rRinterval"])
       if temp > max_rr :
         max_rr = temp
@@ -425,16 +555,15 @@ def get_max_interval(pauses_data):
             "duration" : data["duration"]
         }
     return max_rr_data, max_rr
-
+@timer_decorator
 def convert_to_local(timestamp):
     timestamp_datetime = datetime.fromisoformat(timestamp[:-1])
-    local_tz = datetime.now(pytz.timezone('UTC')).astimezone().tzinfo
+    #local_tz = datetime.now(pytz.timezone('UTC')).astimezone().tzinfo
     local_offset = timedelta(hours=5, minutes=30)
-    # local_offset = datetime.now(local_tz).utcoffset()
     timestamp_local = timestamp_datetime + local_offset
     timestamp_local_str = timestamp_local.strftime("%Y-%m-%d %H:%M:%S")
     return timestamp_local_str
-
+@timer_decorator
 def calculate_start(pause_length,afib_length,ischemia_length,pvc_length,vt_length,af_length,atv_length,svt_length,bigeminy_length):
     afib_start = pause_length // 4 + (4 if pause_length % 4 == 3 else 3)
     pvc_start = afib_length // 4 + (afib_start + 1  if afib_length % 4 == 3 else afib_start)
@@ -446,24 +575,24 @@ def calculate_start(pause_length,afib_length,ischemia_length,pvc_length,vt_lengt
     bigeminy_start = svt_length // 4 + (svt_start + 1  if svt_length % 4 == 3 else svt_start)
     trigeminy_start = bigeminy_length // 4 + (bigeminy_start + 1  if bigeminy_length % 4 == 3 else bigeminy_start)
     return afib_start,pvc_start,ischemia_start,vt_start,af_start,atv_start,svt_start,bigeminy_start,trigeminy_start
-
+@timer_decorator
 def add_footer(canvas, page_num):
     canvas.setFont("Helvetica", 9)
     header_height = 6
     canvas.setFillColor(colors.HexColor('#545353'))
     canvas.drawString(20,letter[1] - header_height*120-40,"Contact number - 079 4003 7674  https://www.bacancytechnology.com/ Copyright ©2024 BACANCY. All Rights Reserved")
     canvas.drawString(550,letter[1] - header_height*120-40,"Page "+str(page_num))
-
-def add_header(canvas, patient_name, gender, age):
+@timer_decorator
+def add_header(canvas, patient_name, gender, age, pid):
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(colors.HexColor('#545353'))
     header_height = 6
     canvas.drawString(20,letter[1] - header_height*5,f"{patient_name}     {gender[:1].capitalize()}   {age} Yr ")
-    canvas.drawString(460,letter[1] - header_height*5,f"ID {id}")
+    canvas.drawString(460,letter[1] - header_height*5,f"ID {pid}")
     canvas.setLineWidth(2)
     canvas.line(20, letter[1] - header_height*15, letter[0] - 20, letter[1] - header_height*15)
     canvas.setLineWidth(1)
-
+@timer_decorator
 def add_heading(canvas, x, y, width, height, heading_text, padding = 10):
     canvas.setFillColor(colors.lightgrey)
     canvas.setFont("Helvetica-Bold", 16)
@@ -478,9 +607,8 @@ def add_heading(canvas, x, y, width, height, heading_text, padding = 10):
     canvas.setFillColorRGB(0, 0, 0)
     # Draw the heading "Pause" centered inside the box
     canvas.drawString(text_x, text_y, heading_text)
-
-def add_images(canvas, data, start_y, disease, i, patient_name, gender, age, json_data):
-    i = i
+@timer_decorator
+def add_images(canvas, data, start_y, disease, i, patient_name, gender, age, pid, json_data):
     img_height = 70
     img_around_height = 40
     blank_box_width = (letter[0] - 40)
@@ -492,7 +620,7 @@ def add_images(canvas, data, start_y, disease, i, patient_name, gender, age, jso
             page_num = canvas.getPageNumber()
             add_footer(canvas,page_num)
             canvas.showPage()
-            add_header(canvas, patient_name, gender, age)
+            add_header(canvas, patient_name, gender, age, pid)
             start_y = letter[1] - header_height * 10 - 75
 
         imgdata = BytesIO()
@@ -502,7 +630,7 @@ def add_images(canvas, data, start_y, disease, i, patient_name, gender, age, jso
         img = ImageReader(imgdata)
         plt.close()
         timestamp = datetime.fromisoformat(entry["timestamp"][:-1])  # Adjust as needed
-        ecg_data = filter_ecg_data_around_timestamp(timestamp, json_data)  # Adjust as needed
+        ecg_data = filter_ecg_data_around_timestamp(entry["timestamp"], json_data)  # Adjust as needed
         timestamp_local = convert_to_local(entry["timestamp"])  # Adjust as needed
         imgdata = BytesIO()
         plt = generate_image_around(ecg_data, timestamp)
@@ -533,37 +661,38 @@ def add_images(canvas, data, start_y, disease, i, patient_name, gender, age, jso
         canvas.circle(40, start_y + 18, 13, stroke=1, fill=1)  # Draw black circle
         canvas.setFillColorRGB(1, 1, 1)  # White color
         canvas.setFont("Helvetica", 12)
-        if i > 9:
+        if i > 9 and i < 100:
           canvas.drawString(33, start_y + 13, f"{i}")
         elif i > 99:
-          canvas.drawString(27, start_y + 13, f"{i}")
-        else:
+          canvas.drawString(30, start_y + 13, f"{i}")
+        else:   
           canvas.drawString(37, start_y + 13, f"{i}")
         i += 1
         # Update start_y for the next iteration
         start_y -= (img_height + img_around_height + 45)
     return i, start_y
-
+@timer_decorator
 def get_first_image(canvas, svt_data_start, page_start, y):
-      x = 250
-      box_width = 340
-      box_height = 50
-      canvas.drawString(x + 300, y - 15, f"Page {page_start}" )
-      canvas.linkURL(f"#page={page_start}", (x + 300, y - 15, x + 340, y + 2))
-      canvas.setFillColorRGB(1, 1, 1)  # White color
-      canvas.rect(x, y-20, box_width, -box_height, stroke=1, fill=1)
-      timestamp_local = convert_to_local(svt_data_start["timestamp"])
-      canvas.drawString(x + 75, y - 15, f'First detected at: {timestamp_local}' )
-      imgdata = BytesIO()
-      plt = generate_ecg_image(svt_data_start)
-      plt.savefig(imgdata, format='png', bbox_inches='tight', pad_inches=0)
-      imgdata.seek(0)
-      img_vt = ImageReader(imgdata)
-      plt.close()
-      canvas.drawImage(img_vt, x, y-20, width=box_width , height=-box_height)
-      y -= box_height + 1
-      return y
-
+    x = 250
+    box_width = 340
+    box_height = 50
+    canvas.drawString(x + 300, y - 15, f"Page {page_start}" )
+    canvas.linkURL(f"#page={page_start}", (x + 300, y - 15, x + 340, y + 2))
+    canvas.setFillColorRGB(1, 1, 1)  # White color
+    canvas.rect(x, y-20, box_width, -box_height, stroke=1, fill=1)
+    timestamp_local = convert_to_local(svt_data_start["timestamp"])
+    canvas.setFillColorRGB(0, 0, 0)
+    canvas.drawString(x + 75, y - 15, f'First detected at: {timestamp_local}' )
+    imgdata = BytesIO()
+    plt = generate_ecg_image(svt_data_start)
+    plt.savefig(imgdata, format='png', bbox_inches='tight', pad_inches=0)
+    imgdata.seek(0)
+    img_vt = ImageReader(imgdata)
+    plt.close()
+    canvas.drawImage(img_vt, x, y-20, width=box_width , height=-box_height)
+    y -= box_height + 1
+    return y
+@timer_decorator
 def generate_plot(hours, heartbeats_list):
     plt.figure(figsize=(10, 2))
     plt.plot(hours, heartbeats_list, linestyle='-', color='black',linewidth=0.5)
@@ -574,11 +703,84 @@ def generate_plot(hours, heartbeats_list):
     plt.tight_layout()
     return plt
 
+@timer_decorator
+async def fetch_data(session, api_endpoint, userId, startTime, endTime):
+    params = {
+        'userId': userId,
+        'startDate': startTime,
+        'endDate': endTime
+    }
+    try:
+        async with session.get(api_endpoint, params=params) as response:
+            response.raise_for_status()
+            return await response.json()
+    except aiohttp.ClientError as e:
+        print(f"Error fetching data from the API: {e}")
+        return None
 
+@timer_decorator
+def process_ecg(ecg_signal, sample_rate):
+    cutoff_freq = 0.5
+    b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
+    ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
+
+    low_cutoff = 0.5
+    high_cutoff = 50
+    b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
+    ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
+
+    ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
+    out = None
+    try:
+        out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
+        r_peaks = out['rpeaks']
+        if len(r_peaks) < 2:
+            raise ValueError("Not enough beats to compute heart rate.")
+    except Exception as e:
+        print("Error:", e)
+        r_peaks = []
+    ecg_signal_processed_list = ecg_signal_normalized.tolist()
+    processed_data = {
+        "ecg_vals": ecg_signal_processed_list,
+        "out": r_peaks.tolist()
+    }
+    return processed_data
+
+@timer_decorator
+async def fetch_ecg_data_parallel(userId, startTime, endTime):
+    api_endpoint = "https://api.accu.live/api/v1/devices/getecgdata"
+    tasks = []
+    endTime = int(endTime)
+    async with ClientSession() as session:
+        current_time = int(startTime)
+        while current_time < endTime:
+            next_time = min(current_time + 7200, endTime)  # 2-hour chunks
+            tasks.append(fetch_and_process_data(session, api_endpoint, userId, current_time, next_time))
+            current_time = next_time
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        ecg_vals = [item for sublist in results if sublist for item in sublist]
+        return ecg_vals
+
+@timer_decorator
+async def fetch_and_process_data(session, api_endpoint, userId, startTime, endTime):
+    result = await fetch_data(session, api_endpoint, userId, startTime, endTime)
+    if result and result.get('data'):
+        sample_rate = 200  # Example: replace with actual sampling rate
+        processed_chunks = []
+        for data_chunk in result['data']:
+            ecg_signal = data_chunk.get('ecg_vals', [])
+            processed_data = process_ecg(ecg_signal, sample_rate)
+            processed_data["date_time"] = data_chunk['date_time']
+            processed_chunks.append(processed_data)
+        return processed_chunks
+    return None
+
+@timer_decorator
 def generate_pdf(userId, startDate, endDate):
-  logo = os.path.join('static', 'Full Logo - On Light.png')
+  i=0
+  logo = os.path.join('static/images', 'Full Logo - On Light.png')
   pdf_buffer = BytesIO()
-  json_data = fetch_ecg_data(userId, startDate, endDate)
   sample_rate = 200
   min_data, max_data  = [],[]
   heart_rate_data = {}
@@ -600,242 +802,144 @@ def generate_pdf(userId, startDate, endDate):
   min_hr=0
   pause = False
   afib = False
-  myocardial_ischemia = False
   pvc = False
   svt = False
   heartbeats = 0
   all_ecg_signals_np = np.array([])
   pauses_data, pvc_data, myocardial_ischemia_data, afib_data, vt_data, svt_data, bigeminy_data, atrioventricular_data, af_data, trigeminy_data, disease_list = [],[],[],[],[],[],[],[],[],[],[]
 
-  for data_point in json_data["data"]:
-      # Extract ECG signal and date_time
-      ecg_signal = data_point["ecg_vals"]
-      date_time = data_point["date_time"]
-      # print(date_time)
-      if len(ecg_signal) < 10:
-          print(len(ecg_signal),"==>",i)
-          print("ECG signal is too short for processing.")
-          continue
-      # Normalize Signals
-      ecg_signal_normalized, out = process_ecg(ecg_signal,sample_rate)
-
-      if out == None:
+    # Execute asynchronous function using asyncio.run
+  async def fetch_data():
+        return await fetch_ecg_data_parallel(userId, startDate, endDate)
+    
+    # Execute asynchronous function using asyncio.run
+  try:
+        loop = asyncio.get_running_loop()
+  except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+  json_data = loop.run_until_complete(fetch_data())
+  for data_point in json_data:
+    # # Extract ECG signal and date_time
+    # ecg_signal = np.array(data_point["ecg_vals"])
+    date_time = data_point["date_time"]
+    # # print(date_time)
+    # if len(ecg_signal) < 10:
+    #     print(len(ecg_signal),"==>",i)
+    #     print("ECG signal is too short for processing.")
+    #     continue
+    #   # Normalize Signals
+    # ecg_signal_normalized, out = process_ecg(ecg_signal,sample_rate)
+    out = data_point["out"]
+    if out == None:
         continue
-
-      r_peaks,p_peaks,q_peaks,s_peaks,t_peaks=find_peaks(ecg_signal_normalized,out,sample_rate)
-      rRinterval,pPinterval,rRsquare,qSinterval,rTinterval,pQinterval,rSinterval,sTinterval,qRinterval,qTinterval,pRinterval,QRSinterval= calculate_intervals(r_peaks,p_peaks,q_peaks,s_peaks,t_peaks)
+    ecg_signal_normalized = data_point["ecg_vals"]
+    
+    r_peaks,p_peaks,q_peaks,s_peaks,t_peaks=find_peaks(ecg_signal_normalized,out,sample_rate)
+    rRinterval,pPinterval,rRsquare,qSinterval,rTinterval,pQinterval,rSinterval,sTinterval,qRinterval,qTinterval,pRinterval,QRSinterval= calculate_intervals(r_peaks,p_peaks,q_peaks,s_peaks,t_peaks)
 
       # Get the starting and ending indices of the appended data
-      start_index = (len(all_ecg_signals_np) - len(ecg_signal_normalized)) + 1
-      end_index = len(all_ecg_signals_np)
-      duration = round((end_index/200) - (start_index/200), 2)
+    start_index = (len(all_ecg_signals_np) - len(ecg_signal_normalized)) + 1
+    end_index = len(all_ecg_signals_np)
+    duration = round((end_index/200) - (start_index/200), 2)
 
 
       #calculate mean of all intervals
-      rms_rR=np.sqrt(np.nanmean(rRsquare) if len(rRsquare) > 0 else 0)*1000
-      mean_rR = np.nanmean(rRinterval) if len(rRinterval) > 0 else 0
-      mean_pP=np.nanmean(pPinterval) if len(pPinterval) > 0 else 0
-      mean_qS=np.nanmean(qSinterval) if len(qSinterval) > 0 else 0
-      mean_rT=np.nanmean(rTinterval) if len(rTinterval) > 0 else 0
-      mean_pQ=np.nanmean(pQinterval) if len(pQinterval) > 0 else 0
-      mean_rS=np.nanmean(rSinterval) if len(rSinterval) > 0 else 0
-      mean_sT=np.nanmean(sTinterval) if len(sTinterval) > 0 else 0
-      mean_qR=np.nanmean(qRinterval) if len(qRinterval) > 0 else 0
-      mean_qT=np.nanmean(qTinterval) if len(qTinterval) > 0 else 0
-      mean_pR=np.nanmean(pRinterval) if len(pRinterval) > 0 else 0
-      mean_qrs=np.nanmean(QRSinterval) if len(QRSinterval) > 0 else 0
+    rms_rR=np.sqrt(np.nanmean(rRsquare) if len(rRsquare) > 0 else 0)*1000
+    mean_rR = np.nanmean(rRinterval) if len(rRinterval) > 0 else 0
+    mean_pP=np.nanmean(pPinterval) if len(pPinterval) > 0 else 0
+    mean_qS=np.nanmean(qSinterval) if len(qSinterval) > 0 else 0
+    mean_rT=np.nanmean(rTinterval) if len(rTinterval) > 0 else 0
+    mean_pQ=np.nanmean(pQinterval) if len(pQinterval) > 0 else 0
+    mean_rS=np.nanmean(rSinterval) if len(rSinterval) > 0 else 0
+    mean_sT=np.nanmean(sTinterval) if len(sTinterval) > 0 else 0
+    mean_qR=np.nanmean(qRinterval) if len(qRinterval) > 0 else 0
+    mean_qT=np.nanmean(qTinterval) if len(qTinterval) > 0 else 0
+    mean_pR=np.nanmean(pRinterval) if len(pRinterval) > 0 else 0
+    mean_qrs=np.nanmean(QRSinterval) if len(QRSinterval) > 0 else 0
 
-      total_mean_rR += mean_rR
-      total_mean_pP += mean_pP
-      total_mean_qS += mean_qS
-      total_mean_rT += mean_rT
-      total_mean_pQ += mean_pQ
-      total_mean_rS += mean_rS
-      total_mean_sT += mean_sT
-      total_mean_qR += mean_qR
-      total_mean_qT += mean_qT
-      total_mean_pR += mean_pR
-      total_mean_qrs += mean_qrs
-      total_mean_qtc += (mean_qT/np.sqrt(mean_rR))
-      num_data_points += 1
-
+    total_mean_rR += mean_rR
+    total_mean_pP += mean_pP
+    total_mean_qS += mean_qS
+    total_mean_rT += mean_rT
+    total_mean_pQ += mean_pQ
+    total_mean_rS += mean_rS
+    total_mean_sT += mean_sT
+    total_mean_qR += mean_qR
+    total_mean_qT += mean_qT
+    total_mean_pR += mean_pR
+    total_mean_qrs += mean_qrs
+    total_mean_qtc += (mean_qT/np.sqrt(mean_rR))
+    num_data_points += 1
       # Calculate HR
-      heartbeats = round(60/mean_rR)
-      if heartbeats < 60:
+    heartbeats = round(60/mean_rR)
+    event_data = {
+                "timestamp": date_time,
+                "heartbeats": heartbeats,
+                "r_peaks": r_peaks,
+                "rRinterval": rRinterval,
+                "ecg_signal_normalized": ecg_signal_normalized,
+                "duration" : duration
+            }
+    if heartbeats < 60:
         sinus_bradycardia_count +=1
 
-      if detect_bigeminy(rRinterval):
-          bigeminy_data_temp = {
-                "timestamp": date_time,
-                "heartbeats": heartbeats,
-                "r_peaks": r_peaks,
-                "rRinterval": rRinterval,
-                "ecg_signal_normalized": ecg_signal_normalized,
-                "duration" : duration
-            }
-          bigeminy_data.append(bigeminy_data_temp)
-      if detect_trigeminy(rRinterval):
-          trigeminy_data_temp = {
-                "timestamp": date_time,
-                "heartbeats": heartbeats,
-                "r_peaks": r_peaks,
-                "rRinterval": rRinterval,
-                "ecg_signal_normalized": ecg_signal_normalized,
-                "duration" : duration
-            }
-          trigeminy_data.append(trigeminy_data_temp)
-      if all(0 <= val <= 0.9 for val in pPinterval):
-          if detect_atrial_flutter(pPinterval):
-              af_data_temp = {
-                    "timestamp": date_time,
-                    "heartbeats": heartbeats,
-                    "r_peaks": r_peaks,
-                    "rRinterval": rRinterval,
-                    "ecg_signal_normalized": ecg_signal_normalized,
-                    "duration" : duration
-                }
-              af_data.append(af_data_temp)
+    if detect_bigeminy(rRinterval):
+        bigeminy_data.append(event_data)
+    if detect_trigeminy(rRinterval):
+        trigeminy_data.append(event_data)
+    if all(0 <= val <= 0.9 for val in pPinterval) and detect_atrial_flutter(pPinterval):
+        af_data.append(event_data)
+    if detect_atrioventricular_block(pRinterval):
+        atrioventricular_data.append(event_data)
 
-      if detect_atrioventricular_block(pRinterval):
-              atrioventricular_data_temp = {
-                    "timestamp": date_time,
-                    "heartbeats": heartbeats,
-                    "r_peaks": r_peaks,
-                    "rRinterval": rRinterval,
-                    "ecg_signal_normalized": ecg_signal_normalized,
-                    "duration" : duration
-                }
-              atrioventricular_data.append(atrioventricular_data_temp)
-      temp_count_ischemia = 0
-      temp_count_pvc = 0
-      for i in s_peaks:
+    temp_count_ischemia = 0
+    temp_count_pvc = 0
+    for i in s_peaks:
         if (ecg_signal_normalized[i] <= -1.5) and (ecg_signal_normalized[i] >= -5):
           temp_count_ischemia += 1
         if (ecg_signal_normalized[i] < -5):
           temp_count_pvc +=2
 
-      if all_ecg_signals_np.size == 0:
+    if all_ecg_signals_np.size == 0:
           all_ecg_signals_np = np.array(ecg_signal_normalized)
-      else:
+    else:
           all_ecg_signals_np = np.concatenate((all_ecg_signals_np, ecg_signal_normalized))
 
-
-
-
       # Store HeartRate with timestamp
-      heart_rate_data[date_time] = heartbeats
-      is_vt_detected = detect_vt(QRSinterval, mean_sT, heartbeats, p_peaks)
-      if is_vt_detected:
-          vt_data_temp = {
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration" : duration
-          }
-          vt_data.append(vt_data_temp)
-
-      svt = detect_svt(mean_qrs, heartbeats, p_peaks)
-      if svt :
-        svt_data_temp = {
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration" : duration
-          }
-        svt_data.append(svt_data_temp)
-      if max_hr != 0:
+    heart_rate_data[date_time] = heartbeats
+    is_vt_detected = detect_vt(QRSinterval, mean_sT, heartbeats, p_peaks)
+    if is_vt_detected:
+        vt_data.append(event_data)
+    svt = detect_svt(mean_qrs, heartbeats, p_peaks)
+    if svt:
+        svt_data.append(event_data)
+    afib = detect_afib(rRinterval, p_peaks)
+    if afib:
+        afib_data.append(event_data)
+    if any(rr_interval * 1000 > 2000 for rr_interval in rRinterval):
+        pause = True
+        pauses_data.append(event_data)
+    if temp_count_ischemia > 0:
+        myocardial_ischemia_data.append(event_data)
+    if temp_count_pvc > 0:
+        pvc = True
+        pvc_data.append(event_data)
+    if max_hr != 0:
         if heartbeats < min_hr:
             min_data.clear()  # Clear the list
-            min_data.append({
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration": duration
-          })
+            min_data.append(event_data)
             min_hr = heartbeats
         if heartbeats > max_hr:
             max_data.clear()  # Clear the list
-            max_data.append({
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration": duration
-          })
+            max_data.append(event_data)
             max_hr = heartbeats
-      else:
+    else:
         min_hr = heartbeats  # Clear the list
-        min_data.append({
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration": duration
-          })
+        min_data.append(event_data)
         max_hr = heartbeats
-        max_data.append({
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration": duration
-          })
-
-      afib = detect_afib(rRinterval, p_peaks)
-      if afib:
-          afib_info = {
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration" : duration,
-          }
-          afib_data.append(afib_info)
-      if any(rr_interval * 1000 > 2000 for rr_interval in rRinterval):
-        pause = True
-        pause_data = {
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration" : duration
-              # Add other relevant data as needed
-          }
-        pauses_data.append(pause_data)
-      if temp_count_ischemia > 0:
-        myocardial_ischemia = {
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration" : duration
-              # Add other relevant data as needed
-          }
-        myocardial_ischemia_data.append(myocardial_ischemia)
-      if temp_count_pvc > 0:
-        pvc = {
-              "timestamp": date_time,
-              "heartbeats": heartbeats,
-              "r_peaks": r_peaks,
-              "rRinterval": rRinterval,
-              "ecg_signal_normalized": ecg_signal_normalized,
-              "duration" : duration
-              # Add other relevant data as needed
-          }
-        pvc_data.append(pvc)
-
+        max_data.append(event_data)
+    
   overall_mean_rR = round((total_mean_rR / num_data_points) * 1000)
   overall_mean_pP = round((total_mean_pP / num_data_points) * 1000)
   overall_mean_pQ = round((total_mean_pQ / num_data_points) * 1000)
@@ -858,20 +962,11 @@ def generate_pdf(userId, startDate, endDate):
   # Convert each adjusted timestamp to hours with fractions
   hours = [timestamp.hour + timestamp.minute / 60 + timestamp.second / 3600 for timestamp in timestamps_adjusted]
   # Plot heartbeats for 24 hrs
-  warnings.filterwarnings("ignore", category=UserWarning)
-
-  # imgdata = generate_plot(hours, heartbeats_list)
-  # img_24hr = ImageReader(imgdata)
-
-  # Plot max hr
 
   #-------------------- PDF -------------------#
   pdf_filename = "ecg_report.pdf"
   canvas = Canvas(pdf_buffer, pagesize=letter)
 
-  # Add PNG logo to the header
-#   logo_path = "Full Logo - On Light.png"  # Update with the path to your PNG logo file
-#   logo = ImageReader(logo_path)
   canvas.drawImage(logo, 20, letter[1] - 60, width=150, height=40)
   header_height = 6  # Header height in cm
 
@@ -885,17 +980,17 @@ def generate_pdf(userId, startDate, endDate):
   ref_doc= patient_data["referring_doctor"]
   gender = patient_data["gender"]
   patient_name = "Mr "+ patient_data["patient_name"] if gender == "Male" else "Ms " + patient_data["patient_name"]
-  id = patient_data["_id"]
+  pid = patient_data["_id"]
   age = patient_data["age"]
   mobile_no = patient_data["mobile_no"]
-  record_for = json_data["data"][0]["date_time"]
+  record_for = json_data[0]["date_time"]
   current_date = datetime.fromisoformat(record_for[:-1])
   formatted_date_record_for = current_date.strftime("%y/%m/%d")
 
 
   data = [
       [f"Name: {patient_name}","","","","","",f"Referal Doctor: {ref_doc}"],
-      [f"Age: {age} Yr        Gender: {gender}","","","","","",f"ID: {id}","",f"Tel: {mobile_no}"],
+      [f"Age: {age} Yr        Gender: {gender}","","","","","",f"ID: {pid}","",f"Tel: {mobile_no}"],
       [f"Record For: {formatted_date_record_for}"],
       ["Complaints: Cardiac Arrhythmia"]
   ]
@@ -997,10 +1092,7 @@ def generate_pdf(userId, startDate, endDate):
   canvas.setFont("Helvetica", 10)
   box_width = 340
   box_height = 50
-  ventricular_data = {}
-  svt_data = {}
-  other_data = {}
-  headings = [f"Ventricular Tachycardia (VT) : {len(ventricular_data)}" if len(ventricular_data) > 0 else "Ventricular Tachycardia (VT) : Not found",
+  headings = [f"Ventricular Tachycardia (VT) : {len(vt_data)}" if len(vt_data) > 0 else "Ventricular Tachycardia (VT) : Not found",
               f"SVT/AT : {len(svt_data)}" if len(svt_data) > 0 else "SVT/AT : Not found",
               f"Pause : {len(pauses_data)}" if len(pauses_data) > 0 else "Pause : Not found",
               f"AFib : {len(afib_data)}" if len(afib_data) > 0 else "AFib : Not found",
@@ -1016,7 +1108,7 @@ def generate_pdf(userId, startDate, endDate):
       # Write heading text
       canvas.setFillColorRGB(0, 0, 0)
       canvas.drawString(x + 7, y - 15, heading)
-      if heading.startswith("Ventricular") and len(ventricular_data) > 0:
+      if heading.startswith("Ventricular") and len(vt_data) > 0:
           # Draw white box if data is available
           y = get_first_image(canvas, vt_data[0], vt_start, y)
       elif heading.startswith("SVT") and len(svt_data) > 0:
@@ -1045,7 +1137,7 @@ def generate_pdf(userId, startDate, endDate):
       elif heading.startswith("Other") and (len(myocardial_ischemia_data) > 0 or len(pvc_data) or len(af_data)>0  or len(atrioventricular_data) > 0 or len(bigeminy_data) > 0 or len(trigeminy_data)>0):
           # Draw white box if data is available
           canvas.setFillColorRGB(1, 1, 1)  # White color
-          canvas.rect(x, y-20 , box_width, -box_height-10, stroke=1, fill=1)
+          canvas.rect(x, y-20 , box_width, -box_height-30, stroke=1, fill=1)
           temp = y - 20
           canvas.setFillColorRGB(0, 0, 0)
           if len(pvc_data) > 0:
@@ -1089,8 +1181,6 @@ def generate_pdf(userId, startDate, endDate):
           y = letter[0] - 5 - i * (box_height + 10)
 
   #Interpretation
-  interpretation_string = ""
-  interpretation_string2 = ""
   interpretation_string3 = ""
   # Loop through the interpretation_data list
   interpretation_string3 += ", ".join(map(str, disease_list))
@@ -1105,20 +1195,15 @@ def generate_pdf(userId, startDate, endDate):
   )
   # Remove the trailing comma and space
 
-  interpretation_string = (
-      f"Acculive ECG monitoring done. Minimum HR - {min_hr} bpm, Maximum HR - {max_hr}, Average HR - {overall_mean_heartbeats}. "
-  )
-  interpretation_string2 = (
-      f"Pause noted {len(pauses_data)} times." if len(pauses_data) != 1 else f"Pause noted Only {len(pauses_data)} time. "
-  )
-  interpretation_para = interpretation_string + "Symptoms for "+ interpretation_string3[:-2] +" were observed." + interpretation_string2
+  
+  interpretation_para = f"Acculive ECG monitoring done. Minimum HR - {min_hr} bpm, Maximum HR - {max_hr}, Average HR - {overall_mean_heartbeats}. " + "Symptoms for "+ interpretation_string3 +" were observed." + f"Pause noted {len(pauses_data)} times." if len(pauses_data) != 1 else f"Pause noted Only {len(pauses_data)} time. "
   if sinus_bradycardia_count > 3 : interpretation_para +=" Sinus Bradycardia detected."
 
   interpretation_paragraph = Paragraph(interpretation_para, paragraph_style)
   # Check if the interpretation string width exceeds the limit
-  interpretation_paragraph_width = interpretation_paragraph.wrap(table_width_limit, 0)[0]
-  if interpretation_paragraph_width > table_width_limit:
-      interpretation_string = interpretation_string[:table_width_limit]
+#  interpretation_paragraph_width = interpretation_paragraph.wrap(table_width_limit, 0)[0]
+#   if interpretation_paragraph_width > table_width_limit:
+#       interpretation_string = interpretation_string[:table_width_limit]
 
   # Create the interpretation data
   interpretation_data = [
@@ -1136,8 +1221,8 @@ def generate_pdf(userId, startDate, endDate):
   ]))
   interpretation_table.wrapOn(canvas, table_width_limit, 0)
   interpretation_table_height = interpretation_table._height
-  interpretation_table.drawOn(canvas, 18, letter[1] - header_height*90)
-  canvas.rect(20, letter[1] - header_height*90, 220,interpretation_table_height, stroke=1, fill=0)
+  interpretation_table.drawOn(canvas, 18, letter[1] - header_height*90 - 20)
+  canvas.rect(20, letter[1] - header_height*90 - 20, 220,interpretation_table_height, stroke=1, fill=0)
 
   space_between = max(y - 100, letter[1] - header_height*90) - (letter[1] - header_height*120-40)
   cmt_height = space_between - (letter[1] - header_height*120)
@@ -1175,7 +1260,7 @@ def generate_pdf(userId, startDate, endDate):
   canvas.setFont("Helvetica", 10)
   heart_rate_data = [
           ["","AFib",f"{len(afib_data)}"],
-          ["","VT/VF",f"{len(ventricular_data)}"],
+          ["","VT/VF",f"{len(vt_data)}"],
           ["","Pause",f"{len(pauses_data)}"],
           ["","PTE","0"],
       ]
@@ -1192,14 +1277,13 @@ def generate_pdf(userId, startDate, endDate):
   heart_rate_table.drawOn(canvas, 25, letter[1] - header_height*30-75)
 
   #add heading
-  add_header(canvas, patient_name, gender, age)
+  add_header(canvas, patient_name, gender, age, pid)
   canvas.setFont("Helvetica-Bold", 16)
   canvas.setFillColorRGB(0, 0, 0)  # White color
   canvas.drawString(20, letter[1] - header_height*10-10, "Day 1 Report Summary")
 
   x, y = 20, letter[1] - header_height*50 - 20
   width, height = 150,30
-  padding = 10  # Padding on all sides
   add_heading(canvas, x, y, width, height, "Heart Rate Trend")
   imgdata = BytesIO()
   plt = generate_plot(hours, heartbeats_list)  # Adjust as needed
@@ -1209,14 +1293,12 @@ def generate_pdf(userId, startDate, endDate):
   plt.close()
   # Reading time
   canvas.drawImage(img_24hr, 25, letter[1] - header_height*30-50, width=430, height=100)
-
   # Max hr image
   start_y = letter[1] - header_height*60 - 10
-  start_y = add_images(canvas, max_data, start_y,"Max HR" ,1, patient_name, gender, age, json_data)
-
+  start_y = add_images(canvas, max_data, start_y,"Max HR" ,1, patient_name, gender, age, pid, json_data)
   # Min hr image
   start_y = letter[1] - header_height*80-50
-  start_y = add_images(canvas, min_data, start_y,"Min HR" ,2, patient_name, gender, age, json_data)
+  start_y = add_images(canvas, min_data, start_y,"Min HR" ,2, patient_name, gender, age, pid, json_data)
 
   page_num = canvas.getPageNumber()
   add_footer(canvas,page_num)
@@ -1228,8 +1310,6 @@ def generate_pdf(userId, startDate, endDate):
   canvas.line(20, letter[1] - header_height*15, letter[0] - 20, letter[1] - header_height*15)
   canvas.setLineWidth(1)
   start_y = letter[1] - header_height * 10 - 25
-  img_pause_height = 70
-  img_pause_around_height = 40
 
   # Pause
   if pause:
@@ -1237,7 +1317,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           start_y = letter[1] - header_height * 10 - 75
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 200,30
@@ -1247,10 +1327,11 @@ def generate_pdf(userId, startDate, endDate):
           canvas.setFont("Helvetica-Bold", 16)
           x, y = 20, start_y
           width, height = 200, 30
+          add_header(canvas, patient_name, gender, age, pid)
           add_heading(canvas, x, y, width, height, "Pause")
           start_y -=50
       disease = "Pause detected at"
-      i, start_y = add_images(canvas, pauses_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, pauses_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   # Afib
@@ -1259,7 +1340,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           start_y = letter[1] - header_height * 10 - 75
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 200,30
@@ -1272,7 +1353,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Atrial Fibrillation")
           start_y -=50
       disease = "AFib detected at"
-      i, start_y = add_images(canvas, afib_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, afib_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
   # PVC
   if pvc:
@@ -1280,7 +1361,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 300,30
           add_heading(canvas, x, y, width, height, "Premature Ventricular Contractions")
@@ -1293,7 +1374,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Premature Ventricular Contractions")
           start_y -=50
       disease = "PVC detected at"
-      i, start_y = add_images(canvas, pvc_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, pvc_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   # myocardial ischemia
@@ -1302,7 +1383,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 200,30
           add_heading(canvas, x, y, width, height, "Myocardial ischemia")
@@ -1315,7 +1396,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Myocardial ischemia")
           start_y -=50
       disease = "ischemia detected at"
-      i, start_y = add_images(canvas, myocardial_ischemia_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, myocardial_ischemia_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   # VT
@@ -1324,7 +1405,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 200,30
           add_heading(canvas, x, y, width, height, "Ventricular Tachycardia")
@@ -1337,7 +1418,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Ventricular Tachycardia")
           start_y -=50
       disease = "VT detected at"
-      i, start_y = add_images(canvas, vt_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, vt_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
   #AtrialFlutter
   if len(af_data) > 0:
@@ -1345,7 +1426,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 150,30
           add_heading(canvas, x, y, width, height, "Atrial Flutter")
@@ -1358,7 +1439,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Atrial Flutter")
           start_y -=50
       disease = "AF detected at"
-      i, start_y = add_images(canvas, af_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, af_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   #Atrioventricular block
@@ -1367,7 +1448,7 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 250,30
           add_heading(canvas, x, y, width, height, "Atrioventricular Block")
@@ -1380,7 +1461,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Atrioventricular Block")
           start_y -=50
       disease = "ATV block detected at"
-      i, start_y = add_images(canvas, atrioventricular_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, atrioventricular_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   #SVT
@@ -1389,10 +1470,11 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 250,30
           add_heading(canvas, x, y, width, height, "Superventricular Tachycardia")
+          start_y = letter[1] - header_height * 10 - 75
       else:
           canvas.setFillColorRGB(0, 0, 0)  # Black color
           canvas.setFont("Helvetica-Bold", 16)
@@ -1401,7 +1483,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Superventricular Tachycardia")
           start_y -=50
       disease = "SVT detected at"
-      i, start_y = add_images(canvas, svt_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, svt_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   #Bigeminy
@@ -1410,10 +1492,11 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 200,30
           add_heading(canvas, x, y, width, height, "Bigeminy Signals")
+          start_y = letter[1] - header_height * 10 - 75
       else:
           canvas.setFillColorRGB(0, 0, 0)  # Black color
           canvas.setFont("Helvetica-Bold", 16)
@@ -1422,7 +1505,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Bigeminy Signals")
           start_y -=50
       disease = "Bigeminy detected at"
-      i, start_y = add_images(canvas, bigeminy_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, bigeminy_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
 
   #Trigeminy
@@ -1431,10 +1514,11 @@ def generate_pdf(userId, startDate, endDate):
           page_num = canvas.getPageNumber()
           add_footer(canvas,page_num)
           canvas.showPage()
-          add_header(canvas, patient_name, gender, age)
+          add_header(canvas, patient_name, gender, age, pid)
           x, y = 20, letter[1] - header_height*10 - 25
           width, height = 200,30
           add_heading(canvas, x, y, width, height, "Trigeminy Signals")
+          start_y = letter[1] - header_height * 10 - 75
       else:
           canvas.setFillColorRGB(0, 0, 0)  # Black color
           canvas.setFont("Helvetica-Bold", 16)
@@ -1443,7 +1527,7 @@ def generate_pdf(userId, startDate, endDate):
           add_heading(canvas, x, y, width, height, "Trigeminy Signals")
           start_y -=50
       disease = "Trigeminy detected at"
-      i, start_y = add_images(canvas, trigeminy_data, start_y,disease ,i, patient_name, gender, age, json_data)
+      i, start_y = add_images(canvas, trigeminy_data, start_y,disease ,i, patient_name, gender, age, pid, json_data)
       start_y -=30
   page_num = canvas.getPageNumber()
   add_footer(canvas,page_num)
@@ -1451,21 +1535,3 @@ def generate_pdf(userId, startDate, endDate):
   canvas.save()
   pdf_buffer.seek(0)
   return pdf_buffer
-
-app = Flask(__name__)
-
-@app.route('/download-report', methods=['GET'])
-def download_report():
-    userId = request.args.get('userId')
-    startDate = request.args.get('startDate')
-    endDate = request.args.get('endDate')
-    pdf_buffer = generate_pdf(userId, startDate, endDate)
-    response = make_response(pdf_buffer)
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = 'attachment; filename=ecg_report.pdf'
-
-    return response
-
-
-if __name__ == '__main__':
-    app.run()

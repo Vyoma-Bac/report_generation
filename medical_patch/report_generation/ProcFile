@@ -1,1 +1,0 @@
-web: gunicorn ecg_algo:app
