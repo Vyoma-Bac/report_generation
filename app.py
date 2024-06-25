@@ -1,7 +1,7 @@
 
 from flask import Flask, make_response, request, jsonify
 from utils.utils import generate_pdf
-#from utils.test import fetch_data_multiprocessing
+# from utils.test import fetch_data
 import time
 import asyncio
 
@@ -14,7 +14,7 @@ def download_report():
     userId = request.args.get('userId')
     startDate = request.args.get('startDate')
     endDate = request.args.get('endDate')
-    pdf_buffer = generate_pdf(userId, startDate, endDate)
+    pdf_buffer = asyncio.run(generate_pdf(userId, startDate, endDate))
     response = make_response(pdf_buffer)
     response.headers['Content-Type'] = 'application/pdf'
     response.headers['Content-Disposition'] = 'attachment; filename=ecg_report.pdf'
@@ -45,7 +45,7 @@ def download_report():
     
 #     # Execute asynchronous function using asyncio.run
     
-#     ecg_data = fetch_data_multiprocessing(userId, startDate, endDate)
+#     ecg_data = fetch_data(userId, startDate, endDate)
 #     end_time = time.time()
 #     duration = end_time - start_time
 #     print(f"Download report request took {duration:.4f} seconds")

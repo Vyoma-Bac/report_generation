@@ -27,17 +27,32 @@ from flask import Flask, make_response, request, jsonify
 import time
 import pymongo
 import multiprocessing
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 from pymongo import MongoClient
 from concurrent.futures import ProcessPoolExecutor
-
+import numpy as np
+from scipy import signal
+import neurokit2 as nk
+import pymongo
+from bson import ObjectId
+from datetime import datetime, timezone
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import warnings
+import motor.motor_asyncio
 # import nest_asyncio
+# connection_string = "mongodb://root:Dfsdag7dgrwe3whfd@194.233.69.96:27017/medicalacculive?authSource=admin&readPreference=primary&appname=MongoDB%20Compass&ssl=false"
+# client = MongoClient(connection_string)
+# db = client['medicalacculive']
+# collection = db['ecgdatas']
 connection_string = "mongodb://root:Dfsdag7dgrwe3whfd@194.233.69.96:27017/medicalacculive?authSource=admin&readPreference=primary&appname=MongoDB%20Compass&ssl=false"
-client = MongoClient(connection_string)
+client = motor.motor_asyncio.AsyncIOMotorClient(connection_string)
 db = client['medicalacculive']
 collection = db['ecgdatas']
+  
 collection2 = db['users']
+#collection.create_index([('userId', pymongo.ASCENDING), ('date_time', pymongo.ASCENDING)])
 
 # nest_asyncio.apply() 
 def timer_decorator(func):
@@ -194,199 +209,6 @@ def calculate_intervals(r_peaks,p_peaks,q_peaks,s_peaks,t_peaks):
         QRSinterval.append(qRinterval[i]+rSinterval[i])
 
     return rRinterval,pPinterval,rRsquare,qSinterval,rTinterval,pQinterval,rSinterval,sTinterval,qRinterval,qTinterval,pRinterval,QRSinterval
-@timer_decorator
-def find_peaks(ecg_signal_normalized,out,sample_rate):
-    # Algo to find peaks in waves
-    r_peaks = out
-    _ ,waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
-    p_peaks = waves_peak['ECG_P_Peaks']
-    q_peaks = waves_peak['ECG_Q_Peaks']
-    s_peaks = waves_peak['ECG_S_Peaks']
-    t_peaks = waves_peak['ECG_T_Peaks']
-
-    # filtering peaks
-    p_peaks.pop()
-    q_peaks.pop()
-    s_peaks.pop()
-    t_peaks.pop()
-    p_peaks = [0 if np.isnan(x) else x for x in p_peaks]
-    q_peaks = [0 if np.isnan(x) else x for x in q_peaks]
-    s_peaks = [0 if np.isnan(x) else x for x in s_peaks]
-    t_peaks = [0 if np.isnan(x) else x for x in t_peaks]
-
-    return r_peaks,p_peaks,q_peaks,s_peaks,t_peaks
-# filter_coeffs_cache = {}
-# @timer_decorator
-# def get_filter_coeffs(sample_rate, filter_type='high'):
-#     global filter_coeffs_cache
-#     # Check if coefficients for the given sample_rate and filter_type are already computed
-#     if (sample_rate, filter_type) in filter_coeffs_cache:
-#         return filter_coeffs_cache[(sample_rate, filter_type)]
-    
-#     if filter_type == 'high':
-#         cutoff_freq = 0.5  # Cutoff frequency in Hz
-#         b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
-#     elif filter_type == 'band':
-#         low_cutoff = 0.5  # Lower cutoff frequency in Hz
-#         high_cutoff = 50  # Higher cutoff frequency in Hz
-#         b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
-    
-#     # Cache the coefficients
-#     filter_coeffs_cache[(sample_rate, filter_type)] = (b, a)
-#     return b, a
-# @timer_decorator
-# def precompute_filters(sample_rate):
-#     cutoff_freq = 0.5  # Cutoff frequency in Hz for baseline wander removal
-#     low_cutoff = 0.5  # Lower cutoff frequency in Hz for bandpass filter
-#     high_cutoff = 50  # Higher cutoff frequency in Hz for bandpass filter
-    
-#     # High-pass filter for baseline wander removal
-#     b_high, a_high = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
-    
-#     # Band-pass filter to remove noise
-#     b_band, a_band = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
-    
-#     return (b_high, a_high), (b_band, a_band)
-
-# # Filters initialization (assuming sample_rate is known and constant)
-# (b_high, a_high), (b_band, a_band) = precompute_filters(200)
-
-# @timer_decorator
-# def process_ecg(ecg_signal, sample_rate):
-#     # Remove baseline wander using a high-pass filter
-#     ecg_signal_filt = signal.filtfilt(b_high, a_high, ecg_signal)
-    
-#     # Apply bandpass filter to remove noise
-#     ecg_signal_filt = signal.filtfilt(b_band, a_band, ecg_signal_filt)
-    
-#     # Normalize the ECG signal
-#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
-    
-#     # Initialize 'out' variable
-#     out = None
-    
-#     # Process the ECG signal to detect R peaks
-#     try:
-#         out = nk.ecg_process(ecg_signal_normalized, sampling_rate=sample_rate)
-#         r_peaks = out['ECG']['R_Peaks']
-        
-#         if len(r_peaks) < 2:
-#             raise ValueError("Not enough beats to compute heart rate.")
-#     except Exception as e:
-#         print("Error:", e)
-#         r_peaks = []  # Return empty list if an error occurs
-
-#     return ecg_signal_normalized, out
-
-# def process_ecg(ecg_signal, sample_rate):
-#     # Use cached filter coefficients
-#     b, a = get_filter_coeffs(sample_rate, 'high')
-#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
-    
-#     b, a = get_filter_coeffs(sample_rate, 'band')
-#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
-    
-#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
-    
-#     out = None
-#     try:
-#         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
-#         r_peaks = out['rpeaks']
-#         if len(r_peaks) < 2:
-#             raise ValueError("Not enough beats to compute heart rate.")
-#     except Exception as e:
-#         print("Error:", e)
-#         r_peaks = []  # Return empty list if an error occurs
-
-#     return ecg_signal_normalized, out
-# @timer_decorator
-# async def fetch_data(session, api_endpoint, userId, startTime, endTime):
-#     params = {
-#         'userId': userId,
-#         'startDate': startTime,
-#         'endDate': endTime
-#     }
-#     try:
-#         async with session.get(api_endpoint, params=params) as response:
-#             response.raise_for_status()  # Raise HTTPError for bad responses
-#             return await response.json()
-#     except aiohttp.ClientError as e:
-#         print(f"Error fetching data from the API: {e}")
-#         return None
-# @timer_decorator
-# async def fetch_ecg_data_parallel(userId, startTime, endTime):
-#     api_endpoint = "https://api.accu.live/api/v1/devices/getecgdata"
-#     tasks = []
-#     startTime = int(startTime)
-#     endTime = int(endTime)
-#     async with ClientSession() as session:
-#         # Divide the time range into 2-hour chunks
-#         current_time = startTime
-#         while current_time < endTime:
-#             next_time = min(current_time + 7200, endTime)  # End of current 2-hour chunk
-#             tasks.append(fetch_data(session, api_endpoint, userId, current_time, next_time))
-#             current_time = next_time
-        
-#         # Fetch all data concurrently
-#         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-#         # Process each chunk of ECG data
-#         ecg_vals = []
-#         for result in results:
-#             if result and result.get('data') and result['data']:  # Check if 'data' exists and is not empty
-#                 for data_chunk in result['data']:
-#                     ecg_signal = data_chunk.get('ecg_vals', [])  # Get 'ecg_vals' from data chunk
-#                     sample_rate = 200  # Example: replace with actual sampling rate
-                    
-#                     # Process ECG signal using process_ecg function
-#                     ecg_signal_processed, out = process_ecg(ecg_signal, sample_rate)
-                    
-#                     # Convert processed ECG signal to list
-#                     ecg_signal_processed_list = ecg_signal_processed.tolist()
-                    
-#                     # Ensure 'out' is JSON-serializable
-                    
-#                     # Prepare processed data structure with 'date_time' and processed 'ecg_vals'
-#                     processed_data = {
-#                         "date_time": data_chunk['date_time'],
-#                         "ecg_vals": ecg_signal_processed_list,
-#                         "out": out
-#                     }
-                    
-#                     # Append processed_data to ecg_vals
-#                     ecg_vals.append(processed_data)
-        
-# #         return ecg_vals
-# @timer_decorator
-# def process_ecg(ecg_signal, sample_rate):
-#     # Remove baseline wander using a high-pass filter
-#     cutoff_freq = 0.5  # Cutoff frequency in Hz
-#     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
-#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
-    
-#     # Apply bandpass filter to remove noise
-#     low_cutoff = 0.5  # Lower cutoff frequency in Hz
-#     high_cutoff = 50  # Higher cutoff frequency in Hz
-#     b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
-#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
-    
-#     # Normalize the ECG signal
-#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
-    
-#     # Initialize 'out' variable
-#     out = None
-    
-#     # Process the ECG signal to detect R peaks
-#     try:
-#         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
-#         r_peaks = out['rpeaks']
-#         if len(r_peaks) < 2:
-#             raise ValueError("Not enough beats to compute heart rate.")
-#     except Exception as e:
-#         print("Error:", e)
-#         r_peaks = []  # Return empty list if an error occurs
-    
-#     return ecg_signal_normalized, out
 
 @timer_decorator
 def detect_afib(rr_intervals, p_peaks, p_peak_threshold=6):
@@ -433,12 +255,12 @@ def filter_ecg_data_around_timestamp(timestamp, json_data, window_size=1):
         end_index = len(json_data)
 
     for data_point in json_data[start_index:end_index]:
-        ecg_data_filtered.append({"timestamp": datetime.fromisoformat(data_point["date_time"][:-1]),
+        ecg_data_filtered.append({"timestamp": data_point["date_time"],
                                   "ecg_vals": data_point["ecg_vals"]})
     return ecg_data_filtered
     
 @timer_decorator
-def fetch_user_data(user_id):
+async def fetch_user_data(user_id):
     # Define the API endpoint
     # Define the API endpoint
     pipeline = [
@@ -506,9 +328,9 @@ def fetch_user_data(user_id):
         },
     },
 ]
-
 # Execute the aggregation pipeline
-    result = list(collection2.aggregate(pipeline))
+    cursor = collection2.aggregate(pipeline)
+    result = await cursor.to_list(length=None) 
     user_data = result[0] # Extract the 'data' part of the response
     referring_doctor_first_name = user_data["doctorDetail"].get("first_Name", "").capitalize()
     referring_doctor_last_name = user_data["doctorDetail"].get("last_Name", "").capitalize()
@@ -627,13 +449,12 @@ def get_max_interval(pauses_data):
     return max_rr_data, max_rr
 @timer_decorator
 def convert_to_local(timestamp):
+    timestamp_datetime = timestamp
     #timestamp_datetime = datetime.fromisoformat(timestamp[:-1])
     #local_tz = datetime.now(pytz.timezone('UTC')).astimezone().tzinfo
     local_offset = timedelta(hours=5, minutes=30)
-    #timestamp_local = timestamp_datetime + local_offset
-    timestamp_local = timestamp + local_offset
-
-    timestamp_local_str = timestamp_local
+    timestamp_local = timestamp_datetime + local_offset
+    timestamp_local_str = timestamp_local.strftime("%Y-%m-%d %H:%M:%S")
     return timestamp_local_str
 @timer_decorator
 def calculate_start(pause_length,afib_length,ischemia_length,pvc_length,vt_length,af_length,atv_length,svt_length,bigeminy_length):
@@ -701,8 +522,9 @@ def add_images(canvas, data, start_y, disease, i, patient_name, gender, age, pid
         imgdata.seek(0)
         img = ImageReader(imgdata)
         plt.close()
+        #timestamp = datetime.fromisoformat(str(entry["timestamp"][:-1]))  # Adjust as needed
+        timestamp = entry["timestamp"]  # Adjust as needed
         
-        #timestamp = datetime.fromisoformat(entry["timestamp"][:-1])  # Adjust as needed
         ecg_data = filter_ecg_data_around_timestamp(entry["timestamp"], json_data)  # Adjust as needed
         timestamp_local = convert_to_local(entry["timestamp"])  # Adjust as needed
         imgdata = BytesIO()
@@ -776,18 +598,134 @@ def generate_plot(hours, heartbeats_list):
     plt.tight_layout()
     return plt
 
+@timer_decorator
+def create_indexes():
+    collection.create_index([('userId', 1), ('date_time', 1)])
 
-# MongoDB connection setup
+# # Function to fetch data for a given time range and user ID
+# @timer_decorator
+# async def fetch_data_chunk(userId, startTime, endTime):
+#     start_date = datetime.fromtimestamp(startTime / 1000, tz=timezone.utc)
+#     end_date = datetime.fromtimestamp(endTime / 1000, tz=timezone.utc)
+#     pipeline = [
+#         {
+#             '$match': {
+#                 'userId': ObjectId(userId),
+#                 'date_time': {
+#                     '$gte': start_date,
+#                     '$lte': end_date,
+#                 },
+#             },
+#         },
+#         {
+#             '$project': {
+#                 '_id': 0,
+#                 'createdAt': 0,
+#                 'updatedAt': 0,
+#                 'userId': 0,
+#                 'mac_address_framed': 0,
+#             },
+#         },
+#     ]
 
-# Ensure indexes on userId and date_time for faster query performance
-collection.create_index([('userId', pymongo.ASCENDING), ('date_time', pymongo.ASCENDING)])
+#     try:
+#         cursor = collection.aggregate(pipeline)
+#         result = list(cursor)
+#         return result
+#     except Exception as e:
+#         print(f"Error fetching data: {e}")
+#         return []  # Return empty list on error
 
-# Function to fetch data for a given time range and user ID
-def fetch_data_chunk(args):
-    userId, startTime, endTime = args
-    start_date = datetime.fromtimestamp(startTime / 1000)
-    end_date = datetime.fromtimestamp(endTime / 1000)
+# # Process ECG data chunk
+# @timer_decorator
+# def process_ecg_data_chunk(data_chunk, sample_rate):
+#     ecg_signal = data_chunk.get('ecg_vals', [])
+    
+#     # Example processing steps (filters and peaks extraction)
+#     processed_data = process_ecg(ecg_signal, sample_rate)
+#     processed_data["date_time"] = data_chunk['date_time']
+#     return processed_data
 
+# # Example ECG processing (replace with actual processing logic)
+# @timer_decorator
+# def process_ecg(ecg_signal, sample_rate):
+#     # High-pass filter
+#     cutoff_freq = 0.5
+#     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
+
+#     # Band-pass filter
+#     low_cutoff = 0.5
+#     high_cutoff = 50
+#     b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
+
+#     # Normalization
+#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
+#     out = None
+#     # Processing ECG
+#     try:
+#         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
+#         r_peaks = out['rpeaks']
+#     except Exception as e:
+#         print("Error in ECG processing:", e)
+#         r_peaks = []
+    
+#     _, waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
+    
+#     # Handle NaN values in peaks
+#     def handle_nan(peaks):
+#         return [0 if np.isnan(x) else x for x in peaks[:-1]]
+
+#     p_peaks = handle_nan(waves_peak['ECG_P_Peaks'])
+#     q_peaks = handle_nan(waves_peak['ECG_Q_Peaks'])
+#     s_peaks = handle_nan(waves_peak['ECG_S_Peaks'])
+#     t_peaks = handle_nan(waves_peak['ECG_T_Peaks'])
+
+#     ecg_signal_processed_list = ecg_signal_normalized.tolist()
+#     processed_data = {
+#         "ecg_vals": ecg_signal_processed_list,
+#         "out": r_peaks.tolist(),
+#         "r_peaks": r_peaks,
+#         "p_peaks": p_peaks,
+#         "q_peaks": q_peaks,
+#         "s_peaks": s_peaks,
+#         "t_peaks": t_peaks
+#     }
+#     print("k")
+#     return processed_data
+# @timer_decorator
+# async def fetch_and_process_data(chunk):
+#     userId, startTime, endTime = chunk
+#     result = await fetch_data_chunk(userId, startTime, endTime)
+    
+#     if result:
+#         sample_rate = 200  # Replace with actual sampling rate
+#         processed_chunks = [process_ecg_data_chunk(data_chunk, sample_rate) for data_chunk in result]
+#         return processed_chunks
+#     return []
+# @timer_decorator
+# async def fetch_data_async(userId, startTime, endTime):
+#     chunk_size = 1800 * 1000  # Adjust chunk size as needed
+#     chunks = []
+#     current_time = int(startTime)
+#     endTime = int(endTime)
+    
+#     while current_time < endTime:
+#         next_time = min(current_time + chunk_size, endTime)
+#         chunks.append((userId, current_time, next_time))
+#         current_time = next_time
+    
+#     # Create tasks for each chunk
+#     tasks = [fetch_and_process_data(chunk) for chunk in chunks]
+#     results = await asyncio.gather(*tasks)
+    
+#     # Flatten the list of results
+#     flattened_results = [item for sublist in results for item in sublist]
+#     return flattened_results
+async def fetch_data_chunk(userId, startTime, endTime):
+    start_date = datetime.fromtimestamp(startTime / 1000, tz=timezone.utc)
+    end_date = datetime.fromtimestamp(endTime / 1000, tz=timezone.utc)
     pipeline = [
         {
             '$match': {
@@ -810,12 +748,16 @@ def fetch_data_chunk(args):
     ]
 
     try:
-        result = list(collection.aggregate(pipeline))
+        cursor = collection.aggregate(pipeline)
+        result = await cursor.to_list(length=None)  # Fetch all results at once
         return result
-    except pymongo.errors.OperationFailure as e:
+    except Exception as e:
         print(f"Error fetching data: {e}")
-        return []  # Return empty list on error
-def process_ecg(ecg_signal, sample_rate):
+        return []
+
+def process_ecg_data_chunk(data_chunk, sample_rate):
+    ecg_signal = data_chunk.get('ecg_vals', [])
+
     cutoff_freq = 0.5
     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
@@ -826,75 +768,78 @@ def process_ecg(ecg_signal, sample_rate):
     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
 
     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
-    out = None
+
     try:
         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
         r_peaks = out['rpeaks']
-        if len(r_peaks) < 2:
-            raise ValueError("Not enough beats to compute heart rate.")
     except Exception as e:
-        print("Error:", e)
+        print("Error in ECG processing:", e)
         r_peaks = []
-    r_peaks = out['rpeaks']
-    _ ,waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
-    p_peaks = waves_peak['ECG_P_Peaks']
-    q_peaks = waves_peak['ECG_Q_Peaks']
-    s_peaks = waves_peak['ECG_S_Peaks']
-    t_peaks = waves_peak['ECG_T_Peaks']
 
-    # filtering peaks
-    p_peaks.pop()
-    q_peaks.pop()
-    s_peaks.pop()
-    t_peaks.pop()
-    p_peaks = [0 if np.isnan(x) else x for x in p_peaks]
-    q_peaks = [0 if np.isnan(x) else x for x in q_peaks]
-    s_peaks = [0 if np.isnan(x) else x for x in s_peaks]
-    t_peaks = [0 if np.isnan(x) else x for x in t_peaks]
+    _, waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
+
+    def handle_nan(peaks):
+        return [0 if np.isnan(x) else x for x in peaks[:-1]]
+
+    p_peaks = handle_nan(waves_peak['ECG_P_Peaks'])
+    q_peaks = handle_nan(waves_peak['ECG_Q_Peaks'])
+    s_peaks = handle_nan(waves_peak['ECG_S_Peaks'])
+    t_peaks = handle_nan(waves_peak['ECG_T_Peaks'])
 
     ecg_signal_processed_list = ecg_signal_normalized.tolist()
     processed_data = {
         "ecg_vals": ecg_signal_processed_list,
         "out": r_peaks.tolist(),
         "r_peaks": r_peaks,
-        "p_peaks" : p_peaks,
-        "q_peaks" : q_peaks,
-        "s_peaks" : s_peaks,
-        "t_peaks" : t_peaks
+        "p_peaks": p_peaks,
+        "q_peaks": q_peaks,
+        "s_peaks": s_peaks,
+        "t_peaks": t_peaks
     }
+    processed_data["date_time"] = data_chunk['date_time']
+    print("k")
     return processed_data
-def fetch_and_process_data(chunk):
-    userId, startTime, endTime = chunk
-    result = fetch_data_chunk(chunk)
-    if result:
-        sample_rate = 200  # Example: replace with actual sampling rate
-        processed_chunks = []
-        for data_chunk in result:
-            ecg_signal = data_chunk.get('ecg_vals', [])
-            processed_data = process_ecg(ecg_signal, sample_rate)
-            processed_data["date_time"] = data_chunk['date_time']
-            processed_chunks.append(processed_data)
-        return processed_chunks
-    return None
 
-def fetch_data_multiprocessing(userId, startTime, endTime):
-    chunk_size = 3600 * 1000  # 1 hour in milliseconds
-    chunks = []
+async def fetch_and_process_data(userId, startTime, endTime, sample_rate):
+    chunk_size = 1800 * 1000  # 1800 seconds in milliseconds (30 minutes)
     current_time = int(startTime)
+    tasks = []
     endTime = int(endTime)
     while current_time < endTime:
-        next_time = min(current_time + chunk_size, endTime)
-        chunks.append((userId, current_time, next_time))
-        current_time = next_time
+        chunk_end_time = min(current_time + chunk_size, endTime)
+        tasks.append(fetch_data_chunk(userId, current_time, chunk_end_time))
+        current_time += chunk_size
 
-    with ProcessPoolExecutor(max_workers=12) as pool:
-        results = list(pool.map(fetch_and_process_data, chunks))
+    # Execute tasks concurrently
+    results = await asyncio.gather(*tasks)
+    processed_chunks = []
 
-    fetched_data = [item for sublist in results for item in sublist if sublist]
+    for chunk_result in results:
+        for data_chunk in chunk_result:
+            processed_data = process_ecg_data_chunk(data_chunk, sample_rate)
+            processed_chunks.append(processed_data)
+
+    return processed_chunks
+
+async def fetch_data_async(userId, startTime, endTime):
+    sample_rate = 200  # Replace with actual sampling rate
+    mid_point = (int(endTime) + int(startTime)) // 2
+    print(mid_point)
+    # Divide into two parts
+    tasks = [
+        fetch_and_process_data(userId, startTime, mid_point, sample_rate),
+        fetch_and_process_data(userId, mid_point, endTime, sample_rate)
+    ]
     
-    return fetched_data
+    # Execute both parts concurrently
+    results = await asyncio.gather(*tasks)
+    
+    # Flatten the list of results
+    flattened_results = [item for sublist in results for item in sublist]
+    
+    return flattened_results
 @timer_decorator
-def generate_pdf(userId, startDate, endDate):
+async def generate_pdf(userId, startDate, endDate):
   i=0
   logo = os.path.join('static/images', 'Full Logo - On Light.png')
   pdf_buffer = BytesIO()
@@ -924,39 +869,14 @@ def generate_pdf(userId, startDate, endDate):
   heartbeats = 0
   all_ecg_signals_np = np.array([])
   pauses_data, pvc_data, myocardial_ischemia_data, afib_data, vt_data, svt_data, bigeminy_data, atrioventricular_data, af_data, trigeminy_data, disease_list = [],[],[],[],[],[],[],[],[],[],[]
-
-  json_data = fetch_data_multiprocessing(userId, startDate, endDate)
-  patient_data = fetch_user_data(userId)
-
-  ref_doc= patient_data["referring_doctor"]
-  gender = patient_data["gender"]
-  patient_name = "Mr "+ patient_data["patient_name"] if gender == "Male" else "Ms " + patient_data["patient_name"]
-  pid = patient_data["_id"]
-  age = patient_data["age"]
-  mobile_no = patient_data["mobile_no"]
-  record_for = json_data[0]["date_time"]
-  print(record_for,type(record_for))
-
-
-  data = [
-      [f"Name: {patient_name}","","","","","",f"Referal Doctor: {ref_doc}"],
-      [f"Age: {age} Yr        Gender: {gender}","","","","","",f"ID: {pid}","",f"Tel: {mobile_no}"],
-      [f"Record For: {record_for}"],
-      ["Complaints: Cardiac Arrhythmia"]
-  ]
-  for data_point in json_data:
-    # # Extract ECG signal and date_time
-    # ecg_signal = np.array(data_point["ecg_vals"])
-    date_time = data_point["date_time"]
-    print(date_time)
+  #create_indexes()
     
-    # # print(date_time)
-    # if len(ecg_signal) < 10:
-    #     print(len(ecg_signal),"==>",i)
-    #     print("ECG signal is too short for processing.")
-    #     continue
-    #   # Normalize Signals
-    # ecg_signal_normalized, out = process_ecg(ecg_signal,sample_rate)
+  json_data = await fetch_data_async(userId, startDate, endDate)
+  
+ 
+  for data_point in json_data:
+    date_time = data_point["date_time"]
+
     out = data_point["out"]
     if out == None:
         continue
@@ -1084,16 +1004,14 @@ def generate_pdf(userId, startDate, endDate):
   reading_time = timestamps[-1] - timestamps[0]
   difference_in_hours = reading_time.total_seconds() / 3600
   reading_time = round(difference_in_hours, 2)
-
   heartbeats_list = list(heart_rate_data.values())
   overall_mean_heartbeats = round(np.mean(heartbeats_list))
   offset = timedelta(hours=5, minutes=30)
   timestamps_adjusted = [timestamp + offset for timestamp in timestamps]
-
   # Convert each adjusted timestamp to hours with fractions
   hours = [timestamp.hour + timestamp.minute / 60 + timestamp.second / 3600 for timestamp in timestamps_adjusted]
   # Plot heartbeats for 24 hrs
-
+  #return {"d":"s"}
   #-------------------- PDF -------------------#
   pdf_filename = "ecg_report.pdf"
   canvas = Canvas(pdf_buffer, pagesize=letter)
@@ -1106,7 +1024,7 @@ def generate_pdf(userId, startDate, endDate):
   canvas.setFont("Helvetica-Bold", 20)
   canvas.drawString(400, letter[1] - 55, "ECG REPORT")
   canvas.line(20, letter[1] - header_height*10-10, letter[0] - 20, letter[1] - header_height*10-10)
-  patient_data = fetch_user_data(userId)
+  patient_data = await fetch_user_data(userId)
 
   ref_doc= patient_data["referring_doctor"]
   gender = patient_data["gender"]
@@ -1115,7 +1033,6 @@ def generate_pdf(userId, startDate, endDate):
   age = patient_data["age"]
   mobile_no = patient_data["mobile_no"]
   record_for = json_data[0]["date_time"]
-  print(record_for,type(record_for))
   formatted_date_record_for = record_for.strftime("%y/%m/%d")
 
 
@@ -1125,7 +1042,7 @@ def generate_pdf(userId, startDate, endDate):
       [f"Record For: {formatted_date_record_for}"],
       ["Complaints: Cardiac Arrhythmia"]
   ]
-
+  
   # Create table and set style
   table = Table(data)
   table.setStyle(TableStyle([
