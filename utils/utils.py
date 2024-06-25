@@ -30,7 +30,7 @@ import multiprocessing
 from datetime import datetime, timezone
 from bson import ObjectId
 from pymongo import MongoClient
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import numpy as np
 from scipy import signal
 import neurokit2 as nk
@@ -758,15 +758,18 @@ async def fetch_data_chunk(userId, startTime, endTime):
 def process_ecg_data_chunk(data_chunk, sample_rate):
     ecg_signal = data_chunk.get('ecg_vals', [])
 
+    # High-pass filter
     cutoff_freq = 0.5
     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
 
+    # Band-pass filter
     low_cutoff = 0.5
     high_cutoff = 50
     b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
 
+    # Normalize the signal
     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
 
     try:
@@ -794,9 +797,9 @@ def process_ecg_data_chunk(data_chunk, sample_rate):
         "p_peaks": p_peaks,
         "q_peaks": q_peaks,
         "s_peaks": s_peaks,
-        "t_peaks": t_peaks
+        "t_peaks": t_peaks,
+        "date_time": data_chunk['date_time']
     }
-    processed_data["date_time"] = data_chunk['date_time']
     print("k")
     return processed_data
 
@@ -805,6 +808,7 @@ async def fetch_and_process_data(userId, startTime, endTime, sample_rate):
     current_time = int(startTime)
     tasks = []
     endTime = int(endTime)
+
     while current_time < endTime:
         chunk_end_time = min(current_time + chunk_size, endTime)
         tasks.append(fetch_data_chunk(userId, current_time, chunk_end_time))
@@ -812,19 +816,22 @@ async def fetch_and_process_data(userId, startTime, endTime, sample_rate):
 
     # Execute tasks concurrently
     results = await asyncio.gather(*tasks)
-    processed_chunks = []
+    
+    # Flatten the list of results
+    data_chunks = [item for sublist in results for item in sublist]
 
-    for chunk_result in results:
-        for data_chunk in chunk_result:
-            processed_data = process_ecg_data_chunk(data_chunk, sample_rate)
-            processed_chunks.append(processed_data)
+    # Process data chunks in parallel using ThreadPoolExecutor
+    with ThreadPoolExecutor() as executor:
+        loop = asyncio.get_event_loop()
+        futures = [loop.run_in_executor(executor, process_ecg_data_chunk, chunk, sample_rate) for chunk in data_chunks]
+        processed_chunks = await asyncio.gather(*futures)
 
     return processed_chunks
 
 async def fetch_data_async(userId, startTime, endTime):
     sample_rate = 200  # Replace with actual sampling rate
     mid_point = (int(endTime) + int(startTime)) // 2
-    print(mid_point)
+    
     # Divide into two parts
     tasks = [
         fetch_and_process_data(userId, startTime, mid_point, sample_rate),
