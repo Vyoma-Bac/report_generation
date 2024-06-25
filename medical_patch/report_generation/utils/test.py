@@ -1,117 +1,229 @@
-import asyncio
-import aiohttp
-from aiohttp import ClientSession
+# import numpy as np
+# from scipy import signal
+# import neurokit2 as nk
+# import motor.motor_asyncio
+# import biosppy.signals.ecg as ecg
+
+# import asyncio
+# from bson import ObjectId
+# from datetime import datetime, timezone
+# import time
+
+# # MongoDB connection setup
+# connection_string = "mongodb://root:Dfsdag7dgrwe3whfd@194.233.69.96:27017/medicalacculive?authSource=admin&readPreference=primary&appname=MongoDB%20Compass&ssl=false"
+# client = motor.motor_asyncio.AsyncIOMotorClient(connection_string)
+# db = client['medicalacculive']
+# collection = db['ecgdatas']
+
+# # Ensure indexes on userId and date_time for faster query performance
+# async def create_indexes():
+#     await collection.create_index([('userId', 1), ('date_time', 1)])
+
+# # Function to fetch data for a given time range and user ID
+# async def fetch_data_chunk(userId, startTime, endTime):
+#     start_date = datetime.fromtimestamp(startTime / 1000, tz=timezone.utc)
+#     end_date = datetime.fromtimestamp(endTime / 1000, tz=timezone.utc)
+#     pipeline = [
+#         {
+#             '$match': {
+#                 'userId': ObjectId(userId),
+#                 'date_time': {
+#                     '$gte': start_date,
+#                     '$lte': end_date,
+#                 },
+#             },
+#         },
+#         {
+#             '$project': {
+#                 '_id': 0,
+#                 'date_time': 1,
+#                 'ecg_vals': 1,
+#             },
+#         },
+#     ]
+
+#     try:
+#         cursor = collection.aggregate(pipeline)
+#         result = await cursor.to_list(length=None)
+#         return result
+#     except Exception as e:
+#         print(f"Error fetching data: {e}")
+#         return []  # Return empty list on error
+
+# # Process ECG data chunk
+# def process_ecg_data_chunk(data_chunk, sample_rate):
+#     ecg_signal = data_chunk.get('ecg_vals', [])
+    
+#     # Example processing steps (filters and peaks extraction)
+#     processed_data = process_ecg(ecg_signal, sample_rate)
+#     processed_data["date_time"] = data_chunk['date_time']
+#     return processed_data
+
+# # Example ECG processing (replace with actual processing logic)
+# def process_ecg(ecg_signal, sample_rate):
+#     # High-pass filter
+#     cutoff_freq = 0.5
+#     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
+
+#     # Band-pass filter
+#     low_cutoff = 0.5
+#     high_cutoff = 50
+#     b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
+#     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
+
+#     # Normalization
+#     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
+    
+#     # Processing ECG
+#     try:
+#         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
+#         r_peaks = out['rpeaks']
+#     except Exception as e:
+#         print("Error in ECG processing:", e)
+#         r_peaks = []
+    
+#     _, waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
+    
+#     # Handle NaN values in peaks
+#     def handle_nan(peaks):
+#         return [0 if np.isnan(x) else x for x in peaks[:-1]]
+
+#     p_peaks = handle_nan(waves_peak['ECG_P_Peaks'])
+#     q_peaks = handle_nan(waves_peak['ECG_Q_Peaks'])
+#     s_peaks = handle_nan(waves_peak['ECG_S_Peaks'])
+#     t_peaks = handle_nan(waves_peak['ECG_T_Peaks'])
+
+#     ecg_signal_processed_list = ecg_signal_normalized.tolist()
+#     processed_data = {
+#         "ecg_vals": ecg_signal_processed_list,
+#         "r_peaks": r_peaks,
+#         "p_peaks": p_peaks,
+#         "q_peaks": q_peaks,
+#         "s_peaks": s_peaks,
+#         "t_peaks": t_peaks
+#     }
+#     return processed_data
+
+# async def fetch_and_process_data(chunk):
+#     userId, startTime, endTime = chunk
+#     result = await fetch_data_chunk(userId, startTime, endTime)
+    
+#     if result:
+#         sample_rate = 200  # Replace with actual sampling rate
+#         processed_chunks = [process_ecg_data_chunk(data_chunk, sample_rate) for data_chunk in result]
+#         return processed_chunks
+#     return []
+
+# async def fetch_data_async(userId, startTime, endTime):
+#     chunk_size = 900 * 1000  # Adjust chunk size as needed
+#     chunks = []
+#     current_time = int(startTime)
+#     endTime = int(endTime)
+    
+#     while current_time < endTime:
+#         next_time = min(current_time + chunk_size, endTime)
+#         chunks.append((userId, current_time, next_time))
+#         current_time = next_time
+    
+#     # Create tasks for each chunk
+#     tasks = [fetch_and_process_data(chunk) for chunk in chunks]
+#     results = await asyncio.gather(*tasks)
+    
+#     # Flatten the list of results
+#     flattened_results = [item for sublist in results for item in sublist]
+#     return flattened_results
+
+# # Example usage66277eaf7dcc5669805e807e&startDate=1713830400000&endDate=1713916800000
+# async def main():
+#     user_id = "66277eaf7dcc5669805e807e"  # Replace with actual user ID
+#     start_time = 1713830400000  # Replace with actual start time in milliseconds
+#     end_time = 1713916800000  # Replace with actual end time in milliseconds
+    
+#     await create_indexes()
+    
+#     start = time.time()
+#     data = await fetch_data_async(user_id, start_time, end_time)
+#     end = time.time()
+    
+#     if data:
+#         print(f"Fetched {len(data)} records in {end - start:.2f} seconds")
+#     else:
+#         print("No records fetched")
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
 import numpy as np
 from scipy import signal
 import neurokit2 as nk
 import biosppy.signals.ecg as ecg
-import matplotlib.pyplot as plt
-from datetime import datetime
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen.canvas import Canvas
-from reportlab.lib.utils import ImageReader
-from reportlab.platypus import Table, TableStyle
-from reportlab.lib import colors
-from io import BytesIO
-from datetime import datetime, timedelta
-from reportlab.platypus import Paragraph
-from reportlab.lib.styles import ParagraphStyle
-from io import BytesIO
-import os
-import requests
-import time
+import motor.motor_asyncio
+import asyncio
+from bson import ObjectId
+from datetime import datetime, timezone
 import csv
 import time
-from functools import wraps # Assuming you have installed 'ecg' package (e.g., pip install ecg)
-from utils.utils import timer_decorator
-import asyncio
-import aiohttp
-from aiohttp import ClientSession
-import numpy as np
-from scipy import signal
-@timer_decorator
-async def fetch_data(session, api_endpoint, userId, startTime, endTime):
-    params = {
-        'userId': userId,
-        'startDate': startTime,
-        'endDate': endTime
-    }
+
+# MongoDB connection setup
+connection_string = "mongodb://root:Dfsdag7dgrwe3whfd@194.233.69.96:27017/medicalacculive?authSource=admin&readPreference=primary&appname=MongoDB%20Compass&ssl=false"
+client = motor.motor_asyncio.AsyncIOMotorClient(connection_string)
+db = client['medicalacculive']
+collection = db['ecgdatas']
+
+# Ensure indexes on userId and date_time for faster query performance
+async def create_indexes():
+    await collection.create_index([('userId', 1), ('date_time', 1)])
+
+# Function to fetch data for a given time range and user ID
+async def fetch_data_chunk(userId, startTime, endTime):
+    start_date = datetime.fromtimestamp(startTime / 1000, tz=timezone.utc)
+    end_date = datetime.fromtimestamp(endTime / 1000, tz=timezone.utc)
+    pipeline = [
+        {
+            '$match': {
+                'userId': ObjectId(userId),
+                'date_time': {
+                    '$gte': start_date,
+                    '$lte': end_date,
+                },
+            },
+        },
+        {
+            '$project': {
+                '_id': 0,
+                'createdAt': 0,
+                'updatedAt': 0,
+                'userId': 0,
+                'mac_address_framed': 0,
+            },
+        },
+    ]
+
     try:
-        async with session.get(api_endpoint, params=params) as response:
-            response.raise_for_status()  # Raise HTTPError for bad responses
-            return await response.json()
-    except aiohttp.ClientError as e:
-        print(f"Error fetching data from the API: {e}")
-        return None
-@timer_decorator
-async def fetch_ecg_data_parallel(userId, startTime, endTime):
-    api_endpoint = "https://api.accu.live/api/v1/devices/getecgdata"
-    tasks = []
-    
-    async with ClientSession() as session:
-        # Divide the time range into 2-hour chunks
-        current_time = startTime
-        while current_time < endTime:
-            next_time = min(current_time + 7200, endTime)  # End of current 2-hour chunk
-            tasks.append(fetch_data(session, api_endpoint, userId, current_time, next_time))
-            current_time = next_time
-        
-        # Fetch all data concurrently
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Process each chunk of ECG data
-        ecg_vals = []
-        for result in results:
-            if result and result.get('data') and result['data']:  # Check if 'data' exists and is not empty
-                for data_chunk in result['data']:
-                    ecg_signal = data_chunk.get('ecg_vals', [])  # Get 'ecg_vals' from data chunk
-                    sample_rate = 200  # Example: replace with actual sampling rate
-                    
-                    # Process ECG signal using process_ecg function
-                    ecg_signal_processed, out = process_ecg(ecg_signal, sample_rate)
-                    
-                    # Convert processed ECG signal to list
-                    ecg_signal_processed_list = ecg_signal_processed.tolist()
-                    
-                    # Ensure 'out' is JSON-serializable
-                    out_serializable = {
-                        "ts": out.ts.tolist() if isinstance(out.ts, np.ndarray) else out.ts,
-                        "filtered": out.filtered.tolist() if isinstance(out.filtered, np.ndarray) else out.filtered,
-                        "rpeaks": out.rpeaks.tolist() if isinstance(out.rpeaks, np.ndarray) else out.rpeaks,
-                        "templates_ts": out.templates_ts.tolist() if isinstance(out.templates_ts, np.ndarray) else out.templates_ts,
-                        # Add other fields as needed
-                    }
-                    # Prepare processed data structure with 'date_time' and processed 'ecg_vals'
-                    processed_data = {
-                        "date_time": data_chunk['date_time'],
-                        "ecg_vals": ecg_signal_processed_list,
-                        "out": out
-                    }
-                    
-                    # Append processed_data to ecg_vals
-                    ecg_vals.append(processed_data)
-        
-        return ecg_vals
-@timer_decorator
+        cursor = collection.aggregate(pipeline)
+        result = await cursor.to_list(length=None)
+        return result
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return []  # Return empty list on error
+
 def process_ecg(ecg_signal, sample_rate):
-    # Remove baseline wander using a high-pass filter
-    cutoff_freq = 0.5  # Cutoff frequency in Hz
+    # High-pass filter
+    cutoff_freq = 0.5
     b, a = signal.butter(2, cutoff_freq / (0.5 * sample_rate), 'high')
     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal)
-    
-    # Apply bandpass filter to remove noise
-    low_cutoff = 0.5  # Lower cutoff frequency in Hz
-    high_cutoff = 50  # Higher cutoff frequency in Hz
+
+    # Band-pass filter
+    low_cutoff = 0.5
+    high_cutoff = 50
     b, a = signal.butter(2, [low_cutoff / (0.5 * sample_rate), high_cutoff / (0.5 * sample_rate)], 'band')
     ecg_signal_filt = signal.filtfilt(b, a, ecg_signal_filt)
-    
-    # Normalize the ECG signal
+
+    # Normalization
     ecg_signal_normalized = (ecg_signal_filt - np.mean(ecg_signal_filt)) / np.std(ecg_signal_filt)
     
-    # Initialize 'out' variable
+    # Processing ECG
     out = None
-    
-    # Process the ECG signal to detect R peaks
     try:
         out = ecg.ecg(signal=ecg_signal_normalized, sampling_rate=sample_rate, show=False)
         r_peaks = out['rpeaks']
@@ -119,22 +231,78 @@ def process_ecg(ecg_signal, sample_rate):
             raise ValueError("Not enough beats to compute heart rate.")
     except Exception as e:
         print("Error:", e)
-        r_peaks = []  # Return empty list if an error occurs
+        r_peaks = []
     
-    return ecg_signal_normalized, out
+    r_peaks = out['rpeaks']
+    _, waves_peak = nk.ecg_delineate(ecg_signal_normalized, r_peaks, sampling_rate=sample_rate, method="peak")
+    
+    p_peaks = [0 if np.isnan(x) else x for x in waves_peak['ECG_P_Peaks'][:-1]]
+    q_peaks = [0 if np.isnan(x) else x for x in waves_peak['ECG_Q_Peaks'][:-1]]
+    s_peaks = [0 if np.isnan(x) else x for x in waves_peak['ECG_S_Peaks'][:-1]]
+    t_peaks = [0 if np.isnan(x) else x for x in waves_peak['ECG_T_Peaks'][:-1]]
 
-# # Example usage:
-# async def main():
-#     userId = "your_user_id"
-#     startTime = 1623888000  # Replace with your UTC start date in seconds
-#     endTime = 1623974400    # Replace with your UTC end date in seconds
+    ecg_signal_processed_list = ecg_signal_normalized.tolist()
+    processed_data = {
+        "ecg_vals": ecg_signal_processed_list,
+        "out": r_peaks.tolist(),
+        "r_peaks": r_peaks,
+        "p_peaks": p_peaks,
+        "q_peaks": q_peaks,
+        "s_peaks": s_peaks,
+        "t_peaks": t_peaks
+    }
+    return processed_data
 
-#     ecg_vals = await fetch_ecg_data_parallel(userId, startTime, endTime)
+async def fetch_and_process_data(chunk):
+    userId, startTime, endTime = chunk
+    result = await fetch_data_chunk(userId, startTime, endTime)
+    if result:
+        sample_rate = 200  # Example: replace with actual sampling rate
+        processed_chunks = []
 
-#     for i, processed_data in enumerate(ecg_vals):
-#         print(f"Processed ECG Data {i+1}:")
-#         print(processed_data)
-#         print()
+        for data_chunk in result:
+            ecg_signal = data_chunk.get('ecg_vals', [])
+            processed_data = process_ecg(ecg_signal, sample_rate)
+            processed_data["date_time"] = data_chunk['date_time']
+            processed_chunks.append(processed_data)
+        return processed_chunks
+    return []
 
-# if __name__ == '__main__':
-#     asyncio.run(main())
+async def fetch_data_async(userId, startTime, endTime):
+    chunk_size = 900 * 1000  # Adjust chunk size as needed
+    chunks = []
+    current_time = int(startTime)
+    endTime = int(endTime)
+    while current_time < endTime:
+        next_time = min(current_time + chunk_size, endTime)
+        chunks.append((userId, current_time, next_time))
+        current_time = next_time
+
+    tasks = [fetch_and_process_data(chunk) for chunk in chunks]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    fetched_data = [item for sublist in results if not isinstance(sublist, Exception) for item in sublist]
+    
+    return fetched_data
+
+# Example usage
+async def main():
+    user_id = "66277eaf7dcc5669805e807e"  # Replace with actual user ID
+    start_time = 1713830400000  # Replace with actual start time in milliseconds
+    end_time = 1713916800000  # Replace with actual end time in milliseconds
+
+    await create_indexes()
+
+    start = time.time()
+    data = await fetch_data_async(user_id, start_time, end_time)
+    end = time.time()
+
+
+    if data:
+        print(f"Fetched {len(data)} records in {end - start} seconds")
+    else:
+        print("No records fetched")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+

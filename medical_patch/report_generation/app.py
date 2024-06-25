@@ -1,6 +1,7 @@
 
 from flask import Flask, make_response, request, jsonify
-from utils import utils, test
+from utils.utils import generate_pdf
+# from utils.test import fetch_data
 import time
 import asyncio
 
@@ -13,37 +14,43 @@ def download_report():
     userId = request.args.get('userId')
     startDate = request.args.get('startDate')
     endDate = request.args.get('endDate')
-    pdf_buffer = utils.generate_pdf(userId, startDate, endDate)
+    pdf_buffer = asyncio.run(generate_pdf(userId, startDate, endDate))
     response = make_response(pdf_buffer)
     response.headers['Content-Type'] = 'application/pdf'
     response.headers['Content-Disposition'] = 'attachment; filename=ecg_report.pdf'
     end_time = time.time()
     duration = end_time - start_time
     print(f"Download report request took {duration:.4f} seconds")
-    print(pdf_buffer)
-    return pdf_buffer
+    return response
 
-@app.route('/test_data', methods=['GET'])
-def test_data():
-    start_time = time.time()
-    print("start_time", start_time)
+# @app.route('/test_data', methods=['GET'])
+# def test_data():
+#     start_time = time.time()
+#     print("start_time", start_time)
     
-    userId = request.args.get('userId')
-    startDate = int(request.args.get('startDate'))  # Convert to integer if needed
-    endDate = int(request.args.get('endDate'))      # Convert to integer if needed
+#     userId = request.args.get('userId')
+#     startDate = int(request.args.get('startDate'))  # Convert to integer if needed
+#     endDate = int(request.args.get('endDate'))      # Convert to integer if needed
     
-    # Run fetch_ecg_data_parallel asynchronously
-    async def fetch_data():
-        return await test.fetch_ecg_data_parallel(userId, startDate, endDate)
+#     # Run fetch_ecg_data_parallel asynchronously
+#     # async def fetch_data():
+#     #     return await test.fetch_ecg_data_parallel(userId, startDate, endDate)
     
-    # Execute asynchronous function using asyncio.run
-    result = asyncio.run(fetch_data())
+#     # # Execute asynchronous function using asyncio.run
+#     # try:
+#     #         loop = asyncio.get_running_loop()
+#     # except RuntimeError:
+#     #         loop = asyncio.new_event_loop()
+#     #         asyncio.set_event_loop(loop)
     
-    end_time = time.time()
-    duration = end_time - start_time
-    print(f"Download report request took {duration:.4f} seconds")
+#     # Execute asynchronous function using asyncio.run
     
-    return jsonify(result)
+#     ecg_data = fetch_data(userId, startDate, endDate)
+#     end_time = time.time()
+#     duration = end_time - start_time
+#     print(f"Download report request took {duration:.4f} seconds")
+#     return jsonify(ecg_data)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
