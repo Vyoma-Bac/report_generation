@@ -1,57 +1,78 @@
-
 from flask import Flask, make_response, request, jsonify
-from utils.utils import generate_pdf
-# from utils.test import fetch_data
+from utils.utils import generate_pdf, fetch_user_data
 import time
-import asyncio
+import requests
+import threading
+import pikepdf
+import io
 
 app = Flask(__name__)
+
+def compress_pdf_with_pikepdf(input_pdf_buffer):
+    # Open the input PDF from the buffer
+    input_pdf_buffer.seek(0)
+    pdf_document = pikepdf.open(input_pdf_buffer)
+
+    # Create a BytesIO buffer for the compressed PDF
+    compressed_pdf_buffer = io.BytesIO()
+
+    # Save the PDF with optimization
+    pdf_document.save(compressed_pdf_buffer)
+    pdf_document.close()
+
+    # Return the compressed PDF buffer
+    compressed_pdf_buffer.seek(0)
+    return compressed_pdf_buffer
+
+def send_pdf_to_api(user_id, start_date, end_date):
+    try:
+        # Generate PDF
+        pdf_buffer = generate_pdf(user_id, start_date, end_date)
+        compressed_pdf_buffer = compress_pdf_with_pikepdf(pdf_buffer)
+        # Log the size of the PDF
+        compressed_pdf_buffer.seek(0, io.SEEK_END)
+        # Send PDF to API
+        target_api_url = 'https://bac-accu-live-1-0-0.onrender.com/api/v1/send-report/'
+        files = {'report': ('ecg_report.pdf', compressed_pdf_buffer, 'application/pdf')}
+        data = {
+            'doctorEmail': 'vyoma.suthar@bacancy.com',
+            'customerName': 'Test',
+            'date': '28-06-2024'
+        }
+        print("Sending PDF to API...")
+        api_response = requests.post(target_api_url, files=files, data=data)
+        api_response.raise_for_status()  # This will raise an HTTPError for bad responses
+        print('PDF sent successfully to the target API')
+    except requests.exceptions.RequestException as e:
+        print(f'Failed to send PDF to the target API: {e}')
+    except Exception as e:
+        print(f'An unexpected error occurred: {e}')
 
 @app.route('/download-report', methods=['GET'])
 def download_report():
     start_time = time.time()
-    print("start_time",start_time)
+    print("Request received at:", time.ctime(start_time))
+
     userId = request.args.get('userId')
     startDate = request.args.get('startDate')
     endDate = request.args.get('endDate')
-    pdf_buffer = asyncio.run(generate_pdf(userId, startDate, endDate))
-    response = make_response(pdf_buffer)
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = 'attachment; filename=ecg_report.pdf'
-    end_time = time.time()
-    duration = end_time - start_time
-    print(f"Download report request took {duration:.4f} seconds")
+
+    # Fetch user data
+    user_data = fetch_user_data(userId)
+    if not user_data:
+        print("No data found for the provided user ID")
+        return jsonify({"error": "No data found for the provided user ID"}), 404
+
+    # Send the preliminary response immediately
+    response_data = {"message": "Preparing to generate report and send to your email. Please wait..."}
+    response = jsonify(response_data)
+
+    # Start a new thread to generate PDF and send to API
+    threading.Thread(target=send_pdf_to_api, args=(userId, startDate, endDate)).start()
+
+    # Return the preliminary response immediately
     return response
-
-# @app.route('/test_data', methods=['GET'])
-# def test_data():
-#     start_time = time.time()
-#     print("start_time", start_time)
-    
-#     userId = request.args.get('userId')
-#     startDate = int(request.args.get('startDate'))  # Convert to integer if needed
-#     endDate = int(request.args.get('endDate'))      # Convert to integer if needed
-    
-#     # Run fetch_ecg_data_parallel asynchronously
-#     # async def fetch_data():
-#     #     return await test.fetch_ecg_data_parallel(userId, startDate, endDate)
-    
-#     # # Execute asynchronous function using asyncio.run
-#     # try:
-#     #         loop = asyncio.get_running_loop()
-#     # except RuntimeError:
-#     #         loop = asyncio.new_event_loop()
-#     #         asyncio.set_event_loop(loop)
-    
-#     # Execute asynchronous function using asyncio.run
-    
-#     ecg_data = fetch_data(userId, startDate, endDate)
-#     end_time = time.time()
-#     duration = end_time - start_time
-#     print(f"Download report request took {duration:.4f} seconds")
-#     return jsonify(ecg_data)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
-    #app.run(host='0.0.0.0', port=8080)
+    # app.run(host='0.0.0.0', port=5000)
