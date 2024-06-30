@@ -28,9 +28,21 @@ def send_pdf_to_api(user_id, start_date, end_date):
     try:
         # Generate PDF
         pdf_buffer = generate_pdf(user_id, start_date, end_date)
-        compressed_pdf_buffer = compress_pdf_with_pikepdf(pdf_buffer)
-        # Log the size of the PDF
-        compressed_pdf_buffer.seek(0, io.SEEK_END)
+        
+        # Check the size of the PDF
+        pdf_buffer.seek(0, io.SEEK_END)
+        pdf_size = pdf_buffer.tell()
+        pdf_buffer.seek(0)
+        print(f"Original PDF size: {pdf_size} bytes")
+
+        # Compress the PDF if it is larger than 15 MB (15 * 1024 * 1024 bytes)
+        if pdf_size > 15 * 1024 * 1024:
+            print("PDF is larger than 15 MB, compressing...")
+            compressed_pdf_buffer = compress_pdf_with_pikepdf(pdf_buffer)
+        else:
+            print("PDF is less than 15 MB, no compression needed.")
+            compressed_pdf_buffer = pdf_buffer
+
         # Send PDF to API
         target_api_url = 'https://bac-accu-live-1-0-0.onrender.com/api/v1/send-report/'
         files = {'report': ('ecg_report.pdf', compressed_pdf_buffer, 'application/pdf')}
