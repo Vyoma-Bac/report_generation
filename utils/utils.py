@@ -8,18 +8,19 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from io import BytesIO
-from datetime import datetime, timedelta
 from reportlab.platypus import Paragraph
 from reportlab.lib.styles import ParagraphStyle
 import os
 from bson import ObjectId
 from scipy import signal
 import neurokit2 as nk
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import concurrent.futures
 import matplotlib
 matplotlib.use('Agg')
 from PyPDF2 import PdfWriter, PdfReader
+from utils.blank import generate_blank_pdf
+
 client = pymongo.MongoClient("mongodb://root:Dfsdag7dgrwe3whfd@194.233.69.96:27017/medicalacculive?authSource=admin&readPreference=primary&appname=MongoDB%20Compass&ssl=false")
 db = client['medicalacculive']
 collection = db['ecgdatas']
@@ -262,7 +263,7 @@ def fetch_user_data(user_id):
     dob = user_data["DOB"]
     current_date = datetime.now()
     age = current_date.year - dob.year - ((current_date.month, current_date.day) < (dob.month, dob.day))
-
+    doctor_email = user_data["doctorDetail"].get("email")
     if not referring_doctor.strip():  # If referring doctor data is empty
                 referring_doctor = "Self"
     return {
@@ -271,7 +272,8 @@ def fetch_user_data(user_id):
                 "gender": user_data["gender"].capitalize(),
                 "_id": user_data["medical_history"]["_id"],
                 "mobile_no": user_data["mobile_no"],
-                "age" : age
+                "age" : age,
+                "doctor_email": doctor_email
             }
  
 def generate_image_around(ecg_data_hr,hr_datetime):
@@ -590,7 +592,7 @@ def fetch_and_process_data(userId, startTime, endTime):
                     except Exception as e:
                         print(f"Error processing chunk: {e}")
         current_time += chunk_size
-    return tasks
+    return tasks if tasks else None
 
 
 def generate_pdf(userId, startDate, endDate):
@@ -606,10 +608,23 @@ def generate_pdf(userId, startDate, endDate):
     svt = False
     all_ecg_signals_np = np.array([])
     pauses_data, pvc_data, myocardial_ischemia_data, afib_data, vt_data, svt_data, bigeminy_data, atrioventricular_data, af_data, trigeminy_data, disease_list = [],[],[],[],[],[],[],[],[],[],[]
-    
-    #Fetch signal data from database and process it   
+    patient_data = fetch_user_data(userId)
     json_data = fetch_and_process_data(userId, startDate, endDate)
-  
+    
+    ref_doc= patient_data["referring_doctor"]
+    gender = patient_data["gender"]
+    patient_name = "Mr "+ patient_data["patient_name"] if gender == "Male" else "Ms " + patient_data["patient_name"]
+    pid = patient_data["_id"]
+    age = patient_data["age"]
+    mobile_no = patient_data["mobile_no"]
+
+    if json_data is None:
+        return generate_blank_pdf(patient_name, ref_doc, age, gender, pid, mobile_no, int(startDate), int(endDate))
+    
+    record_for = json_data[0]["date_time"]
+    formatted_date_record_for = record_for.strftime("%y/%m/%d")
+    #Fetch signal data from database and process it   
+    
     for data_point in json_data:
         date_time = data_point["date_time"]
 
@@ -766,268 +781,10 @@ def generate_pdf(userId, startDate, endDate):
     header_height = 6  # Header height in cm
     # # Add heading
     canvas.setFillColor(colors.black)
-    # canvas.setFont("Helvetica-Bold", 20)
+    #canvas.setFont("Helvetica-Bold", 20)
     # canvas.drawString(400, letter[1] - 55, "ECG REPORT")
     # canvas.line(20, letter[1] - header_height*10-10, letter[0] - 20, letter[1] - header_height*10-10)
-    patient_data = fetch_user_data(userId)
-
-    ref_doc= patient_data["referring_doctor"]
-    gender = patient_data["gender"]
-    patient_name = "Mr "+ patient_data["patient_name"] if gender == "Male" else "Ms " + patient_data["patient_name"]
-    pid = patient_data["_id"]
-    age = patient_data["age"]
-    mobile_no = patient_data["mobile_no"]
-    record_for = json_data[0]["date_time"]
-    formatted_date_record_for = record_for.strftime("%y/%m/%d")
-
-
-    # data = [
-    #     [f"Name: {patient_name}","","","","","",f"Referal Doctor: {ref_doc}"],
-    #     [f"Age: {age} Yr        Gender: {gender}","","","","","",f"ID: {pid}","",f"Tel: {mobile_no}"],
-    #     [f"Record For: {formatted_date_record_for}"],
-    #     ["Complaints: Cardiac Arrhythmia"]
-    # ]
     
-    # # Create table and set style
-    # table = Table(data)
-    # table.setStyle(TableStyle([
-    #     ('TEXTCOLOR', (0, 0), (-1, 0), (0, 0, 0)),  # Header row text color
-    #     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),            # Left alignment for all cells
-    # ]))
-
-    # # Draw table on canvas
-    # table.wrapOn(canvas, 0, 0)
-    # table.drawOn(canvas, 20, letter[1] - header_height*25)
-
-    # # Draw horizontal line
-    # canvas.line(20, letter[1] - header_height*25 - 20, letter[0] - 20, letter[1] - header_height*25 - 20)
-    # formatted_time_max = convert_to_local(max_data[0]["timestamp"])
-    # formatted_time_min = convert_to_local(min_data[0]["timestamp"])
-
-    # # Set font and font size for heading
-    # canvas.setFont("Helvetica-Bold", 11)
-
-    # # Define coordinates for the heading
-    # heading_x, heading_y = 40, letter[1] - header_height*35 - 40
-    # heading_width, heading_height = 180, 15
-    # canvas.setStrokeColor(colors.HexColor('#545353'))
-    # # Draw lines around the heading
-    # line_y = heading_y + heading_height / 2
-    # canvas.line(20, heading_y + 6, 50, heading_y + 6)
-    # canvas.line(210, heading_y + 6, 240,heading_y + 6)
-    # # Draw the heading text in the center
-    # heading_text = "AVERAGE MEASUREMENTS"
-    # text_width = canvas.stringWidth(heading_text, "Helvetica-Bold", 11)
-    # text_x = heading_x + (heading_width - text_width) / 2
-    # text_y = heading_y + (heading_height - canvas._leading) / 2
-    # canvas.drawString(text_x, text_y, heading_text)
-
-    # # Define heart rate data
-    # heart_rate_data = [
-    #     ["Max:", f"{max_hr} ({formatted_time_max})"],
-    #     ["Min:", f"{min_hr} ({formatted_time_min})"],
-    # ]
-    # # Create and draw the heart rate table
-    # heart_rate_table = Table(heart_rate_data, colWidths=[50, 90])
-    # heart_rate_table.setStyle(TableStyle([
-    #     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),  # Left alignment for all cells
-    #     ('TEXTCOLOR', (0, 0), (-1, 0), (0, 0, 0)),  # Header row text color
-    # ]))
-    # heart_rate_table.wrapOn(canvas, 0, 0)
-    # heart_rate_table.drawOn(canvas, 20, letter[1] - header_height * 40 + 10)
-
-    # #Measurements
-    # canvas.setFont("Helvetica-Bold", 11)
-    # # Define coordinates for the heading
-    # heading_x, heading_y = 40, letter[0] - 10
-    # heading_width, heading_height = 180, 15
-    # canvas.setStrokeColor(colors.HexColor('#545353'))
-    # # Draw lines around the heading
-    # line_y = heading_y + heading_height / 2
-    # canvas.line(20, letter[0] - 6, 60, letter[0] - 6)
-    # canvas.line(200, letter[0] - 6, 240, letter[0] - 6)
-    # # Draw the heading text in the center
-    # heading_text = "HEART RATE SUMMARY"
-    # text_width = canvas.stringWidth(heading_text, "Helvetica-Bold", 11)
-    # text_x = heading_x + (heading_width - text_width) / 2
-    # text_y = heading_y + (heading_height - canvas._leading) / 2
-    # canvas.drawString(text_x, text_y, heading_text)
-
-    # measurements_data = [
-    #         ["Heart Rate:",f"{overall_mean_heartbeats} bpm"],
-    #         ["RR Interval:",f"{overall_mean_rR} ms"],
-    #         ["PP Interval:",f"{overall_mean_pP} ms"],
-    #         ["PR Interval:",f"{overall_mean_pR} ms"],
-    #         ["PR Interval:",f"{overall_mean_pR} ms"],
-    #         # ["QS Interval:",f"{overall_mean_qS} ms"],
-    #         # ["RT Interval:",f"{overall_mean_rT} ms"],
-    #         ["PQ Interval:",f"{overall_mean_pQ} ms"],
-    #         # ["RS Interval:",f"{overall_mean_rS} ms"],
-    #         ["ST Interval:",f"{overall_mean_sT} ms"],
-    #         # ["QR Interval:",f"{overall_mean_qR} ms"],
-    #         ["QT Interval:",f"{overall_mean_qT} ms"],
-    #         ["PR Interval:",f"{overall_mean_pR} ms"],
-    #         ["QRS Interval:",f"{overall_mean_qrs} ms"],
-    #         ["QTc Interval:",f"{overall_mean_qtc} ms"],
-
-    #     ]
-
-    # # Create and draw the first heart rate table
-    # measurements_table = Table(measurements_data,colWidths=[80,90])
-    # measurements_table.setStyle(TableStyle([
-    #         ('ALIGN', (0, 1), (-1, -1), 'LEFT'),  # Left alignment for the rest of the cells
-    #         ('TEXTCOLOR', (0, 0), (-1, 0), (0, 0, 0)),  # Header row text color
-    #         ('FONTSIZE', (0, 0), (-1, 0), 10),
-    #     ]))
-    # measurements_table.wrapOn(canvas, 0, 0)
-    # measurements_table.drawOn(canvas, 20, letter[1] - header_height*65-60)
-
-    # canvas.setFont("Helvetica", 10)
-    # box_width = 340
-    # box_height = 50
-    # headings = [f"Ventricular Tachycardia (VT) : {len(vt_data)}" if len(vt_data) > 0 else "Ventricular Tachycardia (VT) : Not found",
-    #             f"SVT/AT : {len(svt_data)}" if len(svt_data) > 0 else "SVT/AT : Not found",
-    #             f"Pause : {len(pauses_data)}" if len(pauses_data) > 0 else "Pause : Not found",
-    #             f"AFib : {len(afib_data)}" if len(afib_data) > 0 else "AFib : Not found",
-    #             "Other : "]
-    # x = 250
-    # y = letter[0] + 30
-    # afib_start, pvc_start, ischemia_start, vt_start, af_start, atv_start, svt_start,bigeminy_start,trigeminy_start = calculate_start(len(pauses_data),len(afib_data),len(myocardial_ischemia_data),len(pvc_data),len(vt_data),len(af_data),len(atrioventricular_data),len(svt_data),len(bigeminy_data))
-    # for i, heading in enumerate(headings):
-    #     y = y-30
-    #     canvas.setFillColor(colors.lightgrey)
-    #     canvas.rect(x, y , box_width, -20, stroke=0, fill=1)
-    #     # Write heading text
-    #     canvas.setFillColorRGB(0, 0, 0)
-    #     canvas.drawString(x + 7, y - 15, heading)
-    #     if heading.startswith("Ventricular") and len(vt_data) > 0:
-    #         # Draw white box if data is available
-    #         y = get_first_image(canvas, vt_data[0], vt_start, y)
-    #     elif heading.startswith("SVT") and len(svt_data) > 0:
-    #         # Draw white box if data is available
-    #         y = get_first_image(canvas, svt_data[0], svt_start, y)
-    #     elif heading.startswith("Pause") and len(pauses_data) > 0:
-    #         # Draw white box if data is available
-    #         pause_data, max_rr = get_max_interval(pauses_data)
-    #         canvas.drawString(x + 300, y - 15, "Page 3" )
-    #         timestamp_local = convert_to_local(pause_data["timestamp"])
-    #         canvas.drawString(x + 65, y - 15, f'Longest RR: {timestamp_local}  duration: {max_rr} s' )
-    #         canvas.linkURL("#page=3", (x + 300, y - 15, x + 340, y + 2))
-    #         canvas.setFillColorRGB(1, 1, 1)  # White color
-    #         canvas.rect(x, y-20, box_width, -box_height, stroke=1, fill=1)
-    #         imgdata = BytesIO()
-    #         plt = generate_ecg_image(pause_data)
-    #         plt.savefig(imgdata, format='png', bbox_inches='tight', pad_inches=0)
-    #         imgdata.seek(0)
-    #         img_pause = ImageReader(imgdata)
-    #         plt.close()
-    #         canvas.drawImage(img_pause, x, y-20, width=box_width , height=-box_height)
-    #         y -= box_height + 1
-    #     elif heading.startswith("AFib") and len(afib_data) > 0:
-    #         # Draw white box if data is available
-    #         y = get_first_image(canvas, afib_data[0], afib_start, y)
-    #     elif heading.startswith("Other") and (len(myocardial_ischemia_data) > 0 or len(pvc_data) or len(af_data)>0  or len(atrioventricular_data) > 0 or len(bigeminy_data) > 0 or len(trigeminy_data)>0):
-    #         # Draw white box if data is available
-    #         canvas.setFillColorRGB(1, 1, 1)  # White color
-    #         canvas.rect(x, y-20 , box_width, -box_height-30, stroke=1, fill=1)
-    #         temp = y - 20
-    #         canvas.setFillColorRGB(0, 0, 0)
-    #         if len(pvc_data) > 0:
-    #             temp -=12
-    #             canvas.drawString(x + 7, temp, f"PVC detected {len (pvc_data)} times")
-    #             canvas.drawString(x + 300, temp, f"Page {pvc_start}" )
-    #             canvas.linkURL(f"#page={pvc_start}", (x + 300, temp, x + 340, temp + 5))
-    #             disease_list.append("Premature ventricular contractions")
-    #         if len(myocardial_ischemia_data) > 0 :
-    #             temp -=12
-    #             canvas.drawString(x + 7, temp, f"Myocardial ischemia detected {len (myocardial_ischemia_data)} times")
-    #             canvas.drawString(x + 300, temp, f"Page {ischemia_start}" )
-    #             canvas.linkURL(f"#page={ischemia_start}", (x + 300, temp, x + 340, temp + 5))
-    #             disease_list.append("Myocardial ischemia")
-    #         if len(af_data) > 0 :
-    #             temp -=12
-    #             canvas.drawString(x + 7, temp, f"Atrial Flutter detected {len (af_data)} times")
-    #             canvas.drawString(x + 300, temp, f"Page {af_start}" )
-    #             canvas.linkURL(f"#page={af_start}", (x + 300, temp, x + 340, temp + 5))
-    #             disease_list.append("Atrial Flutter")
-
-    #         if len(atrioventricular_data) > 0 :
-    #             temp -=12
-    #             canvas.drawString(x + 7, temp, f"Atrioventricular block detected {len (atrioventricular_data)} times")
-    #             canvas.drawString(x + 300, temp, f"Page {atv_start}" )
-    #             canvas.linkURL(f"#page={atv_start}", (x + 300, temp, x + 340, temp + 5))
-    #             disease_list.append("Atrioventricular block")
-
-    #         if len(bigeminy_data) > 0 :
-    #             temp -=12
-    #             canvas.drawString(x + 7, temp, f"Bigeminy detected {len (bigeminy_data)} times")
-    #             canvas.drawString(x + 300, temp, f"Page {bigeminy_start}" )
-    #             canvas.linkURL(f"#page={bigeminy_start}", (x + 300, temp, x + 340, temp + 5))
-
-    #         if len(trigeminy_data) > 0 :
-    #             temp -=12
-    #             canvas.drawString(x + 7, temp, f"Trigeminy detected {len (trigeminy_data)} times")
-    #             canvas.drawString(x + 300, temp, f"Page {trigeminy_start}" )
-    #             canvas.linkURL(f"#page={trigeminy_start}", (x + 300, temp, x + 340, temp + 5))
-
-    #         y = letter[0] - 5 - i * (box_height + 10)
-    # #Interpretation
-    # interpretation_string3 = ""
-    # # Loop through the interpretation_data list
-    # interpretation_string3 += ", ".join(map(str, disease_list))
-    # table_width_limit = 220
-    # # Create a paragraph style for wrapping text
-    # paragraph_style = ParagraphStyle(
-    #     'WrapStyle',
-    #     fontSize=10,
-    #     leading=12,
-    #     leftIndent=0,
-    #     rightIndent=0
-    # )
-    # # Remove the trailing comma and space
-
-    
-    # interpretation_para = f"Acculive ECG monitoring done. Minimum HR - {min_hr} bpm, Maximum HR - {max_hr}, Average HR - {overall_mean_heartbeats}. " + "Symptoms for "+ interpretation_string3 +" were observed." + f"Pause noted {len(pauses_data)} times." if len(pauses_data) != 1 else f"Pause noted Only {len(pauses_data)} time. "
-    # if sinus_bradycardia_count > 3 : interpretation_para +=" Sinus Bradycardia detected."
-
-    # interpretation_paragraph = Paragraph(interpretation_para, paragraph_style)
-    # # Check if the interpretation string width exceeds the limit
-    # #  interpretation_paragraph_width = interpretation_paragraph.wrap(table_width_limit, 0)[0]
-    # #   if interpretation_paragraph_width > table_width_limit:
-    # #       interpretation_string = interpretation_string[:table_width_limit]
-
-    # # Create the interpretation data
-    # interpretation_data = [
-    #     ["INTERPRETATION (UNCONFIRMED)"],
-    #     [interpretation_paragraph],
-    # ]
-
-    # # Create and draw the interpretation table
-    # interpretation_table = Table(interpretation_data, colWidths=[220])
-    # interpretation_table.setStyle(TableStyle([
-    #     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),  # Left alignment for all cells
-    #     ('TEXTCOLOR', (0, 0), (-1, 0), (0, 0, 0)),  # Header row text color
-    #     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-    #     ('FONTSIZE', (0, 0), (-1, 0), 10),
-    # ]))
-    # interpretation_table.wrapOn(canvas, table_width_limit, 0)
-    # interpretation_table_height = interpretation_table._height
-    # interpretation_table.drawOn(canvas, 18, letter[1] - header_height*90 - 20)
-    # canvas.rect(20, letter[1] - header_height*90 - 20, 220,interpretation_table_height, stroke=1, fill=0)
-
-    # space_between = max(y - 100, letter[1] - header_height*90) - (letter[1] - header_height*120-40)
-    # cmt_height = space_between - (letter[1] - header_height*120)
-    # # Draw a rectangle with the calculated height
-    # canvas.rect(20, space_between - 10, 567, - cmt_height, stroke=1, fill=0)
-    # canvas.setFont("Helvetica-Bold", 10)
-    # canvas.setFillColorRGB(0, 0, 0)  # White color
-    # canvas.drawString(30,space_between - 30, "PHYSICIAN COMMENTS:")
-    # canvas.drawString(354, letter[1] - header_height*110 - 60 , "Signature: ")
-    # canvas.drawString(490, letter[1] - header_height*110 - 60, "Date:")
-
-    # page_num = (canvas.getPageNumber()) + 1
-    # add_footer(canvas,page_num)
-
     # Add a blank box with white background
     blank_box_width = (letter[0] - 40)
     blank_box_height = 160
@@ -1354,7 +1111,7 @@ def generate_pdf(userId, startDate, endDate):
     canvas.line(20, letter[1] - header_height*10-10, letter[0] - 20, letter[1] - header_height*10-10)
     data = [
         [f"Name: {patient_name}","","","","","",f"Referal Doctor: {ref_doc}"],
-        [f"Age: {age} Yr        Gender: {gender}","","","","","",f"ID: {pid}","",f"Tel: {mobile_no}"],
+        [f"Age: {age} Yr        Gender: {gender}","","","","","",f"ID: {pid}","",f"Tel: {int(mobile_no)}"],
         [f"Record For: {formatted_date_record_for}"],
         ["Complaints: Cardiac Arrhythmia"]
     ]
@@ -1560,11 +1317,6 @@ def generate_pdf(userId, startDate, endDate):
     if sinus_bradycardia_count > 3 : interpretation_para +=" Sinus Bradycardia detected."
 
     interpretation_paragraph = Paragraph(interpretation_para, paragraph_style)
-    # Check if the interpretation string width exceeds the limit
-    #  interpretation_paragraph_width = interpretation_paragraph.wrap(table_width_limit, 0)[0]
-    #   if interpretation_paragraph_width > table_width_limit:
-    #       interpretation_string = interpretation_string[:table_width_limit]
-
     # Create the interpretation data
     interpretation_data = [
         ["INTERPRETATION (UNCONFIRMED)"],
@@ -1599,22 +1351,19 @@ def generate_pdf(userId, startDate, endDate):
     canvas.save()
     pdf_buffer_first_page.seek(0)
 
-
-
     output = PdfWriter()
     final_buffer = BytesIO()
-        # Read the new first page
+    # Read the new first page
     first_page_pdf = PdfReader(pdf_buffer_first_page)
     output.add_page(first_page_pdf.pages[0])
-
-        # Read the original PDF and add its pages
+    # Read the original PDF and add its pages
     main_pdf = PdfReader(pdf_buffer)
     for page_num in range(len(main_pdf.pages)):
             output.add_page(main_pdf.pages[page_num])
-
-        # Save the final PDF to the buffer
+    
+    # Save the final PDF to the buffer
     output.write(final_buffer)
     final_buffer.seek(0)
 
-    return final_buffer
+    return final_buffer,formatted_date_record_for
 
